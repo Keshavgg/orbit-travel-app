@@ -44,23 +44,23 @@ export const GroupCollabScreen: React.FC<GroupCollabScreenProps> = ({
 
   const poll = activeTrip.poll || {
     id: 'poll_1',
-    question: 'Day 3 — Nusa Penida or Uluwatu?',
-    expires_in_hours: 6,
+    question: `${activeTrip.destination} — Top Activity or Sunset Dining?`,
+    ends_in_hours: 24,
     options: [
-      { id: 'opt_nusa', title: 'Nusa Penida day trip', votes: 2, voted_by: ['RS', 'AK'] },
-      { id: 'opt_uluwatu', title: 'Uluwatu + Kecak dance', votes: 1, voted_by: ['VJ'] },
+      { id: 'opt_1', title: `${activeTrip.destination} Highlight Tour`, votes: 2, voted_by: ['RS', 'AK'] },
+      { id: 'opt_2', title: 'Sunset Lounge & Local Cuisine', votes: 1, voted_by: ['VJ'] },
     ],
   };
 
   const totalVotes = poll.options.reduce((sum, opt) => sum + opt.votes, 0);
 
   const handleCopyLink = () => {
-    const inviteUrl = 'https://plannr.app/join/bali-boys-4';
+    const inviteUrl = `https://plannr.app/join/${activeTrip.id}`;
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(inviteUrl);
     }
     setCopiedLink(true);
-    showToast('Invite link copied: https://plannr.app/join/bali-boys-4', 'success');
+    showToast(`Invite link copied: ${inviteUrl}`, 'success');
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
@@ -79,10 +79,10 @@ export const GroupCollabScreen: React.FC<GroupCollabScreenProps> = ({
 
         <div>
           <h1 className="text-xl font-black text-[#151E28] leading-tight">
-            Bali with the boys
+            {activeTrip.title}
           </h1>
           <p className="text-xs text-[#7A8699] font-medium mt-0.5">
-            Group · 4 members · 2 pending
+            Group · {activeTrip.members?.length || 4} members · {activeTrip.members?.filter(m => m.status === 'pending').length || 1} pending
           </p>
         </div>
       </div>
@@ -92,13 +92,34 @@ export const GroupCollabScreen: React.FC<GroupCollabScreenProps> = ({
         <div className="w-full rounded-3xl overflow-hidden border border-[#EDE7DF] shadow-sm bg-[#9E90A1]">
           {/* Upper Artwork */}
           <div className="h-[95px] relative overflow-hidden">
-            <BaliHeroArt compact className="w-full h-full object-cover" />
+            {activeTrip.destination?.toLowerCase() === 'bali' ? (
+              <BaliHeroArt compact className="w-full h-full object-cover" />
+            ) : (
+              <>
+                <img
+                  src={
+                    activeTrip.destination?.toLowerCase().includes('goa')
+                      ? 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=800&q=80'
+                      : activeTrip.destination?.toLowerCase().includes('rishi')
+                      ? 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?auto=format&fit=crop&w=800&q=80'
+                      : activeTrip.destination?.toLowerCase().includes('kashmir')
+                      ? 'https://images.unsplash.com/photo-1566837945700-30057527ade0?auto=format&fit=crop&w=800&q=80'
+                      : activeTrip.destination?.toLowerCase().includes('dubai')
+                      ? 'https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=800&q=80'
+                      : 'https://images.unsplash.com/photo-1587474260584-136574528ed5?auto=format&fit=crop&w=800&q=80'
+                  }
+                  alt={activeTrip.destination || 'Trip'}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+              </>
+            )}
           </div>
 
           {/* Dark Navy Info Bar */}
           <div className="bg-[#1A263E] text-white px-4 py-2.5 flex items-center justify-between text-xs font-semibold">
-            <span>Bali · 12 – 18 Nov</span>
-            <span className="text-slate-300">In 19 days</span>
+            <span>{activeTrip.destination} · {activeTrip.start_date} – {activeTrip.end_date}</span>
+            <span className="text-slate-300">{activeTrip.total_days} {activeTrip.total_days === 1 ? 'day' : 'days'}</span>
           </div>
         </div>
 
@@ -130,37 +151,28 @@ export const GroupCollabScreen: React.FC<GroupCollabScreenProps> = ({
 
         {/* ── Member Circles Row (Matching Page 5) ── */}
         <div className="flex items-start justify-between px-1">
-          {/* RS You */}
-          <div className="flex flex-col items-center">
-            <div className="w-14 h-14 rounded-full bg-[#D95338] text-white font-extrabold text-sm flex items-center justify-center shadow-sm ring-4 ring-[#D95338]/20">
-              RS
-            </div>
-            <span className="text-xs font-bold text-[#151E28] mt-1.5">You</span>
-          </div>
-
-          {/* AK Aman */}
-          <div className="flex flex-col items-center">
-            <div className="w-14 h-14 rounded-full bg-[#26855F] text-white font-extrabold text-sm flex items-center justify-center shadow-sm ring-4 ring-[#26855F]/20">
-              AK
-            </div>
-            <span className="text-xs font-bold text-[#151E28] mt-1.5">Aman</span>
-          </div>
-
-          {/* VJ Vikram (Pending) */}
-          <div className="flex flex-col items-center">
-            <div className="w-14 h-14 rounded-full bg-[#E5E2FB] text-[#554DBF] font-extrabold text-sm flex items-center justify-center shadow-sm ring-4 ring-[#E5A93C]/40">
-              VJ
-            </div>
-            <span className="text-xs font-bold text-[#D97706] mt-1.5">Pending</span>
-          </div>
-
-          {/* NK Nikhil (Pending) */}
-          <div className="flex flex-col items-center">
-            <div className="w-14 h-14 rounded-full bg-[#DCF3F6] text-[#1E7485] font-extrabold text-sm flex items-center justify-center shadow-sm ring-4 ring-[#E5A93C]/40">
-              NK
-            </div>
-            <span className="text-xs font-bold text-[#D97706] mt-1.5">Pending</span>
-          </div>
+          {activeTrip.members?.map((mem) => {
+            const isYou = mem.is_current_user || mem.initials === 'RS';
+            const isPending = mem.status === 'pending';
+            return (
+              <div key={mem.id} className="flex flex-col items-center">
+                <div
+                  className={`w-14 h-14 rounded-full font-extrabold text-sm flex items-center justify-center shadow-sm ${
+                    isYou
+                      ? 'bg-[#D95338] text-white ring-4 ring-[#D95338]/20'
+                      : isPending
+                      ? 'bg-[#E5E2FB] text-[#554DBF] ring-4 ring-[#E5A93C]/40'
+                      : 'bg-[#26855F] text-white ring-4 ring-[#26855F]/20'
+                  }`}
+                >
+                  {mem.initials}
+                </div>
+                <span className={`text-xs font-bold mt-1.5 ${isPending ? 'text-[#D97706]' : 'text-[#151E28]'}`}>
+                  {isYou ? 'You' : isPending ? 'Pending' : mem.name.split(' ')[0]}
+                </span>
+              </div>
+            );
+          })}
 
           {/* + Invite button */}
           <div className="flex flex-col items-center">

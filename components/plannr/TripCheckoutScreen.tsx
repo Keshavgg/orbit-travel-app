@@ -44,6 +44,11 @@ export const TripCheckoutScreen: React.FC<TripCheckoutScreenProps> = ({
   const [isRequesting, setIsRequesting] = useState<boolean>(false);
   const [isPaying, setIsPaying] = useState<boolean>(false);
 
+  const allStops = activeTrip.days.flatMap((d) => d.stops);
+  const myShareAmount = activeTrip.members?.find((m) => m.is_current_user)?.share_amount || activeTrip.budget_per_person || 15000;
+  const totalTripCost = activeTrip.total_budget || (activeTrip.budget_per_person * (activeTrip.members?.length || 4));
+  const isMicro = activeTrip.total_days === 1;
+
   // Status badges helper
   const getStatusBadge = (status: string, hasPaid: boolean, isReminded?: boolean, isYou?: boolean) => {
     if (hasPaid) {
@@ -104,13 +109,13 @@ export const TripCheckoutScreen: React.FC<TripCheckoutScreenProps> = ({
             Book the trip
           </h1>
           <p className="text-xs text-[#7A8699] font-medium mt-0.5">
-            One checkout · everything for Bali
+            One checkout · everything for {activeTrip.destination}
           </p>
         </div>
       </div>
 
       <div className="px-4 space-y-4">
-        {/* ── Top Tabs: Trip cart · 6 / Split & settle ── */}
+        {/* ── Top Tabs: Trip cart / Split & settle ── */}
         <div className="p-1 rounded-2xl bg-[#EDE7DF]/60 flex items-center">
           <button
             type="button"
@@ -121,7 +126,7 @@ export const TripCheckoutScreen: React.FC<TripCheckoutScreenProps> = ({
                 : 'text-[#7A8699] hover:text-[#151E28]'
             }`}
           >
-            Trip cart · 6
+            Trip cart · {allStops.length || 4}
           </button>
           <button
             type="button"
@@ -132,47 +137,55 @@ export const TripCheckoutScreen: React.FC<TripCheckoutScreenProps> = ({
                 : 'text-[#7A8699] hover:text-[#151E28]'
             }`}
           >
-            Split & settle
+            Split &amp; settle
           </button>
         </div>
 
         {/* ── Itemized Cart Breakdown Cards (Matching Page 6) ── */}
         <div className="space-y-3">
-          {/* Card 1: Flights */}
+          {/* Card 1: Flights / Transit */}
           <div className="bg-white rounded-3xl p-4 border border-[#EDE7DF] shadow-sm flex items-center justify-between gap-3 hover:border-[#1A56DB]/30 transition-all">
             <div className="flex items-center gap-3.5 min-w-0">
               <CheckoutFlightIcon className="w-13 h-13" />
               <div className="min-w-0">
                 <h4 className="text-[14px] font-bold text-[#151E28] leading-tight">
-                  DEL → DPS · IndiGo · round trip
+                  {isMicro
+                    ? `${activeTrip.destination} Fast-Track Metro & Cab`
+                    : `DEL → ${activeTrip.destination.slice(0, 3).toUpperCase()} · Round Trip Flight`}
                 </h4>
                 <p className="text-xs text-[#7A8699] mt-1 line-clamp-1">
-                  12 Nov 02:40 · 18 Nov 23:10 · 4 pax · 1 stop
+                  {activeTrip.start_date} · {activeTrip.members?.length || 4} pax · express connectivity
                 </p>
               </div>
             </div>
             <div className="text-right shrink-0">
-              <div className="text-sm font-extrabold text-[#151E28]">₹24,800</div>
+              <div className="text-sm font-extrabold text-[#151E28]">
+                ₹{Math.round(activeTrip.budget_per_person * (isMicro ? 0.25 : 0.45)).toLocaleString('en-IN')}
+              </div>
               <div className="text-[11px] text-[#7A8699]">per person</div>
             </div>
           </div>
 
-          {/* Card 2: Villa */}
+          {/* Card 2: Villa / Stay */}
           <div className="bg-white rounded-3xl p-4 border border-[#EDE7DF] shadow-sm flex items-center justify-between gap-3 hover:border-[#D95338]/30 transition-all">
             <div className="flex items-center gap-3.5 min-w-0">
               <CheckoutVillaIcon className="w-13 h-13" />
               <div className="min-w-0">
                 <h4 className="text-[14px] font-bold text-[#151E28] leading-tight">
-                  Villa Senja · Ubud · 6 nights
+                  {isMicro
+                    ? `${activeTrip.destination} Terminal & Hub Day Lounge`
+                    : `${activeTrip.destination} Curated Boutique Stay`}
                 </h4>
                 <p className="text-xs text-[#7A8699] mt-1 line-clamp-1">
-                  2 bedrooms · pool · free cancellation
+                  {isMicro ? 'Lounge pass & luggage assist' : `${activeTrip.total_days} nights · pool suite · breakfast`}
                 </p>
               </div>
             </div>
             <div className="text-right shrink-0">
-              <div className="text-sm font-extrabold text-[#151E28]">₹8,200</div>
-              <div className="text-[11px] text-[#7A8699]">per person</div>
+              <div className="text-sm font-extrabold text-[#151E28]">
+                {isMicro ? '₹0' : `₹${Math.round(activeTrip.budget_per_person * 0.35).toLocaleString('en-IN')}`}
+              </div>
+              <div className="text-[11px] text-[#7A8699]">{isMicro ? 'included' : 'per person'}</div>
             </div>
           </div>
 
@@ -182,15 +195,17 @@ export const TripCheckoutScreen: React.FC<TripCheckoutScreenProps> = ({
               <CheckoutActivitiesIcon className="w-13 h-13" />
               <div className="min-w-0">
                 <h4 className="text-[14px] font-bold text-[#151E28] leading-tight">
-                  Activities · 4 items
+                  Experiences · {allStops.filter((s) => s.category === 'Activity' || s.category === 'Culture').length || 3} items
                 </h4>
                 <p className="text-xs text-[#7A8699] mt-1 line-clamp-1">
-                  Mt Batur hike, Nusa Penida, temple, cooking class
+                  {allStops.map((s) => s.place_name).slice(0, 3).join(', ') || 'Curated sightseeing & activities'}
                 </p>
               </div>
             </div>
             <div className="text-right shrink-0">
-              <div className="text-sm font-extrabold text-[#151E28]">₹14,600</div>
+              <div className="text-sm font-extrabold text-[#151E28]">
+                ₹{Math.round(activeTrip.budget_per_person * (isMicro ? 0.75 : 0.2)).toLocaleString('en-IN')}
+              </div>
               <div className="text-[11px] text-[#7A8699]">per person</div>
             </div>
           </div>
@@ -201,10 +216,10 @@ export const TripCheckoutScreen: React.FC<TripCheckoutScreenProps> = ({
               <CheckoutDiningIcon className="w-13 h-13" />
               <div className="min-w-0">
                 <h4 className="text-[14px] font-bold text-[#151E28] leading-tight">
-                  Restaurants · 2 reservations
+                  Dining · {allStops.filter((s) => s.category === 'Food').length || 1} reservations
                 </h4>
                 <p className="text-xs text-[#7A8699] mt-1 line-clamp-1">
-                  Zest Café, Locavore · pay at venue
+                  {allStops.filter((s) => s.category === 'Food').map((s) => s.place_name).join(', ') || 'Signature local cafes'} · pay at venue
                 </p>
               </div>
             </div>
@@ -215,89 +230,58 @@ export const TripCheckoutScreen: React.FC<TripCheckoutScreenProps> = ({
           </div>
         </div>
 
-        {/* ── Split 4 Ways Section (Matching Page 6) ── */}
+        {/* ── Split Section ── */}
         <div className="pt-2">
           <div className="flex items-center justify-between mb-2.5">
-            <h3 className="text-sm font-black text-[#151E28]">Split 4 ways</h3>
+            <h3 className="text-sm font-black text-[#151E28]">
+              Split {activeTrip.members?.length || 4} ways
+            </h3>
             <button
               type="button"
-              onClick={() => showToast('Equal split enabled (₹47,600 each)', 'info')}
+              onClick={() => showToast(`Equal split enabled (₹${myShareAmount.toLocaleString('en-IN')} each)`, 'info')}
               className="text-xs font-bold text-[#0066CC] hover:underline"
             >
               Equal · edit
             </button>
           </div>
 
-          {/* Member Status List */}
+          {/* Dynamic Member Status List */}
           <div className="space-y-2">
-            {/* RS You */}
-            <div className="bg-white rounded-2xl p-3.5 border border-[#EDE7DF] shadow-sm flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-[#D95338] text-white text-xs font-bold flex items-center justify-center">
-                  RS
+            {activeTrip.members?.map((mem) => {
+              const isYou = mem.is_current_user || mem.initials === 'RS';
+              const shareAmt = mem.share_amount || myShareAmount;
+              return (
+                <div key={mem.id} className="bg-white rounded-2xl p-3.5 border border-[#EDE7DF] shadow-sm flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className={`w-8 h-8 rounded-full text-xs font-bold flex items-center justify-center text-white ${
+                        isYou ? 'bg-[#D95338]' : mem.status === 'confirmed' ? 'bg-[#26855F]' : 'bg-[#554DBF]'
+                      }`}
+                    >
+                      {mem.initials}
+                    </div>
+                    <span className="text-xs font-bold text-[#151E28]">{isYou ? 'You' : mem.name}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-extrabold text-[#151E28]">₹{shareAmt.toLocaleString('en-IN')}</span>
+                    {getStatusBadge(mem.status, mem.has_paid, mem.is_reminded, isYou)}
+                  </div>
                 </div>
-                <span className="text-xs font-bold text-[#151E28]">You</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-extrabold text-[#151E28]">₹47,600</span>
-                {getStatusBadge('paying', false, false, true)}
-              </div>
-            </div>
-
-            {/* AK Aman */}
-            <div className="bg-white rounded-2xl p-3.5 border border-[#EDE7DF] shadow-sm flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-[#26855F] text-white text-xs font-bold flex items-center justify-center">
-                  AK
-                </div>
-                <span className="text-xs font-bold text-[#151E28]">Aman</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-extrabold text-[#151E28]">₹47,600</span>
-                {getStatusBadge('confirmed', true, false, false)}
-              </div>
-            </div>
-
-            {/* VJ Vikram */}
-            <div className="bg-white rounded-2xl p-3.5 border border-[#EDE7DF] shadow-sm flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-[#E5E2FB] text-[#554DBF] text-xs font-bold flex items-center justify-center">
-                  VJ
-                </div>
-                <span className="text-xs font-bold text-[#151E28]">Vikram</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-extrabold text-[#151E28]">₹47,600</span>
-                {getStatusBadge('reminded', false, true, false)}
-              </div>
-            </div>
-
-            {/* NK Nikhil */}
-            <div className="bg-white rounded-2xl p-3.5 border border-[#EDE7DF] shadow-sm flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-[#DCF3F6] text-[#1E7485] text-xs font-bold flex items-center justify-center">
-                  NK
-                </div>
-                <span className="text-xs font-bold text-[#151E28]">Nikhil</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-extrabold text-[#151E28]">₹47,600</span>
-                {getStatusBadge('pending', false, false, false)}
-              </div>
-            </div>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* ── Sticky Bottom Checkout Bar (Matching Page 6) ── */}
+      {/* ── Sticky Bottom Checkout Bar ── */}
       <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EDE7DF] p-4 z-40 shadow-[0_-6px_25px_rgba(0,0,0,0.07)] space-y-3">
         {/* Total Row */}
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-[#7A8699]">
-            Trip total · 4 travellers
+            Trip total · {activeTrip.members?.length || 4} travellers
           </span>
           <span className="text-xl font-black text-[#151E28] tracking-tight">
-            ₹1,90,400
+            ₹{totalTripCost.toLocaleString('en-IN')}
           </span>
         </div>
 
@@ -314,14 +298,14 @@ export const TripCheckoutScreen: React.FC<TripCheckoutScreenProps> = ({
             <span>{isRequesting ? 'Sending...' : 'Request shares'}</span>
           </button>
 
-          {/* Pay my share · ₹47,600 button */}
+          {/* Pay my share button */}
           <button
             type="button"
             onClick={handlePayShare}
             disabled={isPaying}
             className="flex-1 py-3.5 px-3 rounded-2xl bg-[#D95338] text-white font-bold text-xs hover:bg-[#C4442B] active:scale-[0.98] transition-all shadow-[0_4px_14px_rgba(217,83,56,0.35)] flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
-            <span>{isPaying ? 'Verifying...' : 'Pay my share · ₹47,600'}</span>
+            <span>{isPaying ? 'Verifying...' : `Pay my share · ₹${myShareAmount.toLocaleString('en-IN')}`}</span>
           </button>
         </div>
       </div>

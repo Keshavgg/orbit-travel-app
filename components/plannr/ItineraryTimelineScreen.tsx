@@ -26,6 +26,22 @@ import {
 } from './TimelineIcons';
 
 
+const DESTINATION_HERO_IMAGES: Record<string, string> = {
+  delhi: 'https://images.unsplash.com/photo-1587474260584-136574528ed5?auto=format&fit=crop&w=1200&q=80',
+  mumbai: 'https://images.unsplash.com/photo-1570168007204-dfb528c6958f?auto=format&fit=crop&w=1200&q=80',
+  bangalore: 'https://images.unsplash.com/photo-1596176530529-78163a4f7af2?auto=format&fit=crop&w=1200&q=80',
+  goa: 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1200&q=80',
+  rishikesh: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?auto=format&fit=crop&w=1200&q=80',
+  jaipur: 'https://images.unsplash.com/photo-1603258849062-114400490b6a?auto=format&fit=crop&w=1200&q=80',
+  samode: 'https://images.unsplash.com/photo-1599661046289-e31897846e41?auto=format&fit=crop&w=1200&q=80',
+  kashmir: 'https://images.unsplash.com/photo-1566837945700-30057527ade0?auto=format&fit=crop&w=1200&q=80',
+  thailand: 'https://images.unsplash.com/photo-1528181304800-259b08848526?auto=format&fit=crop&w=1200&q=80',
+  dubai: 'https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1200&q=80',
+  bali: 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1200&q=80',
+  vietnam: 'https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=1200&q=80',
+  japan: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=1200&q=80',
+};
+
 interface ItineraryTimelineScreenProps {
   onNavigate?: (screen: PlannrScreen, data?: any) => void;
 }
@@ -50,11 +66,22 @@ export const ItineraryTimelineScreen: React.FC<ItineraryTimelineScreenProps> = (
 
   // Get active day object
   const currentDay =
-    activeTrip.days.find((d) => d.day_number === activeDayNumber) || activeTrip.days[0];
+    activeTrip.days.find((d) => d.day_number === activeDayNumber) || activeTrip.days[0] || {
+      id: 'day_1',
+      day_number: 1,
+      day_title: 'Day 1',
+      stops: [],
+    };
+
+  // Calculate unbooked stops across the entire trip
+  const allStops = activeTrip.days.flatMap((d) => d.stops);
+  const unbookedStops = allStops.filter((s) => !s.is_booked && s.price_per_person > 0);
+  const unbookedTotalCost = unbookedStops.reduce((sum, s) => sum + s.price_per_person, 0);
+  const unbookedCount = unbookedStops.length;
 
   const handleShare = () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText('https://plannr.app/trips/bali-with-the-boys');
+      navigator.clipboard.writeText(`https://plannr.app/trips/${activeTrip.id}`);
     }
     showToast('Trip itinerary link copied to clipboard!', 'success');
   };
@@ -98,9 +125,20 @@ export const ItineraryTimelineScreen: React.FC<ItineraryTimelineScreenProps> = (
     <div className="min-h-screen bg-[#FAF7F2] text-[#151E28] pb-28 select-none">
       {/* ── Top Header Hero Banner (Matching Page 4) ── */}
       <div className="relative w-full h-[230px] overflow-hidden bg-[#9C8F9F]">
-        {/* Background Vector Artwork */}
+        {/* Background Artwork */}
         <div className="absolute inset-0">
-          <BaliHeroArt className="w-full h-full object-cover" />
+          {activeTrip.destination?.toLowerCase() === 'bali' ? (
+            <BaliHeroArt className="w-full h-full object-cover" />
+          ) : (
+            <>
+              <img
+                src={DESTINATION_HERO_IMAGES[activeTrip.destination?.toLowerCase() || 'delhi'] || DESTINATION_HERO_IMAGES['delhi']}
+                alt={activeTrip.destination || 'Trip'}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/20" />
+            </>
+          )}
         </div>
 
         {/* Top Control Bar */}
@@ -222,6 +260,8 @@ export const ItineraryTimelineScreen: React.FC<ItineraryTimelineScreenProps> = (
                             ? 'bg-[#FDF0EC] text-[#D95338]'
                             : stop.category === 'Culture'
                             ? 'bg-[#E6F0FA] text-[#0066CC]'
+                            : stop.category === 'Stay'
+                            ? 'bg-[#F3E8FF] text-[#7E22CE]'
                             : 'bg-[#E6F0FA] text-[#0066CC]'
                         }`}
                       >
@@ -229,16 +269,15 @@ export const ItineraryTimelineScreen: React.FC<ItineraryTimelineScreenProps> = (
                       </span>
 
                       {/* Status or Action Badge */}
-                      {isTegallalang && (
-                        <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#E5F5ED] text-[#1B8054]">
-                          Booked
+                      {stop.is_booked ? (
+                        <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#E5F5ED] text-[#1B8054] flex items-center gap-1">
+                          <span>Booked</span>
+                          <span>✓</span>
                         </span>
-                      )}
-
-                      {isZest && (
+                      ) : (stop.is_reserve_only || stop.category === 'Food') ? (
                         <button
                           type="button"
-                          onClick={() => reserveTableStop(stop.id, 'Zest Café')}
+                          onClick={() => reserveTableStop(stop.id, stop.place_name)}
                           className={`text-[11px] font-bold px-3 py-0.5 rounded-full border transition-all ${
                             stop.is_booked
                               ? 'bg-[#E5F5ED] text-[#1B8054] border-[#C8E6D9]'
@@ -247,17 +286,13 @@ export const ItineraryTimelineScreen: React.FC<ItineraryTimelineScreenProps> = (
                         >
                           {stop.is_booked ? 'Reserved ✓' : 'Reserve table'}
                         </button>
-                      )}
-
-                      {isTirta && (
+                      ) : stop.price_per_person > 0 ? (
                         <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#FEF6E9] text-[#B26B00]">
-                          ₹400 pp · unbooked
+                          ₹{stop.price_per_person.toLocaleString('en-IN')} pp · unbooked
                         </span>
-                      )}
-
-                      {!isTegallalang && !isZest && !isTirta && stop.price_per_person > 0 && (
+                      ) : (
                         <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#FAF7F2] text-[#7A8699] border border-[#EDE7DF]">
-                          ₹{stop.price_per_person} pp
+                          Free entry
                         </span>
                       )}
                     </div>
@@ -293,14 +328,14 @@ export const ItineraryTimelineScreen: React.FC<ItineraryTimelineScreenProps> = (
         </div>
       </div>
 
-      {/* ── Sticky Bottom Bar (Matching Page 4) ── */}
+      {/* ── Sticky Bottom Bar ── */}
       <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EDE7DF] px-4 py-3 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] flex items-center justify-between">
         <div>
           <span className="text-[10px] font-bold uppercase tracking-wider text-[#7A8699] block">
             UNBOOKED ITEMS
           </span>
           <div className="text-lg font-black text-[#151E28] leading-tight mt-0.5">
-            ₹18,600 <span className="text-xs font-normal text-[#7A8699]">/ person</span>
+            ₹{unbookedTotalCost.toLocaleString('en-IN')} <span className="text-xs font-normal text-[#7A8699]">/ person</span>
           </div>
         </div>
 
@@ -310,7 +345,7 @@ export const ItineraryTimelineScreen: React.FC<ItineraryTimelineScreenProps> = (
           onClick={() => navigate('checkout')}
           className="py-3 px-6 rounded-2xl bg-[#D95338] text-white font-bold text-sm hover:bg-[#C4442B] active:scale-95 transition-all shadow-[0_4px_14px_rgba(217,83,56,0.35)] flex items-center gap-1.5"
         >
-          <span>Book all · 6</span>
+          <span>Book all · {unbookedCount > 0 ? unbookedCount : allStops.length}</span>
         </button>
       </div>
 
