@@ -11,11 +11,12 @@ interface ServiceTab {
 }
 
 const SERVICE_TABS: ServiceTab[] = [
-  { id: 'recommender', icon: '✨', title: 'AI Recommender', sublabel: 'Tell AI & Get Plan ↗', isHot: true },
-  { id: 'events', icon: '🍸', title: 'Events & City Life', sublabel: 'Cafes, Nightlife & Gigs', isHot: true },
+  { id: 'plannr', icon: '🎒', title: 'Plannr AI', sublabel: 'Reels & Split (New)', isHot: true },
   { id: 'flights', icon: '✈️', title: 'Flights', sublabel: '520+ Live Routes' },
   { id: 'stays', icon: '🏨', title: 'Hotels & Villas', sublabel: '520+ Luxury Stays' },
   { id: 'weekend', icon: '🏡', title: 'Weekend <3h', sublabel: 'Rishikesh, Jaipur' },
+  { id: 'recommender', icon: '✨', title: 'AI Recommender', sublabel: 'Tell AI & Get Plan ↗', isHot: true },
+  { id: 'events', icon: '🍸', title: 'Events & City Life', sublabel: 'Cafes, Nightlife & Gigs', isHot: true },
   { id: 'visa', icon: '🛂', title: 'Visas', sublabel: 'Flat ₹499 Cap', isHot: true },
   { id: 'dirtcheap', icon: '🔥', title: 'Cheap Drops', sublabel: '60% Off Unsold', isHot: true },
   { id: 'gst', icon: '🏢', title: 'myBiz (GST)', sublabel: '18% & 5% ITC' },

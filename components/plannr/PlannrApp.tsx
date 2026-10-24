@@ -31,16 +31,21 @@ const PlannrAppContent: React.FC<PlannrAppContentProps> = ({ onExitToOrbit }) =>
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] font-sans antialiased text-[#151E28] relative">
-      {/* Optional Top Mode Switcher pill to toggle back to Orbit OS */}
+      {/* Top Banner to switch back to Orbit Travel Hub */}
       {onExitToOrbit && (
-        <div className="fixed top-2 right-2 z-50">
+        <div className="bg-[#151E28] text-white px-4 py-2 flex items-center justify-between text-xs sticky top-0 z-50 shadow-sm border-b border-white/10">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#D95338]" />
+            <span className="font-extrabold tracking-tight">Plannr AI Studio</span>
+          </div>
+
           <button
             type="button"
             onClick={onExitToOrbit}
-            className="bg-[#151E28]/80 hover:bg-[#151E28] backdrop-blur-md text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-md transition-all flex items-center gap-1.5"
+            className="bg-white/15 hover:bg-white/25 active:scale-95 text-white font-bold px-3 py-1 rounded-full text-[11px] transition-all flex items-center gap-1.5"
           >
-            <span>Orbit OS</span>
-            <span>⇄</span>
+            <span>✈️ Orbit Travel Hub</span>
+            <span>➔</span>
           </button>
         </div>
       )}
