@@ -417,13 +417,13 @@ export default function OrbitAiChatbot({
             {/* Text Label */}
             <div className="text-left leading-tight">
               <div className="flex items-center gap-1.5 font-black text-xs sm:text-sm text-white tracking-tight">
-                <span>✨ AI Recommender</span>
+                <span>✨ Plannr &amp; AI Copilot</span>
                 <span className="px-1.5 py-0.2 bg-cyan-400 text-slate-950 text-[9px] rounded font-mono font-black">
-                  OPEN CHAT ↗
+                  OPEN ↗
                 </span>
               </div>
               <div className="text-[10.5px] text-cyan-200 font-medium">
-                Tell AI &amp; Get Custom Trips
+                Plan Trips &amp; Custom Budgets
               </div>
             </div>
           </button>
@@ -498,11 +498,21 @@ export default function OrbitAiChatbot({
           </div>
 
           {/* Subheader Feature Pill */}
-          <div className="bg-[#050B18] px-4 py-1.5 border-b border-white/[0.08] text-[10px] text-slate-400 flex items-center justify-between font-mono shrink-0">
+          <div className="bg-[#050B18] px-4 py-2 border-b border-white/[0.08] text-[10px] text-slate-400 flex items-center justify-between font-mono shrink-0">
             <span className="flex items-center gap-1 text-cyan-300 font-bold">
               <Sparkles className="w-3 h-3 text-cyan-300" /> Conversational Multi-Turn Architect
             </span>
-            <span className="text-slate-400">Step {profile.step} / 3 Complete</span>
+            <button
+              type="button"
+              onClick={() => {
+                handleClose();
+                window.dispatchEvent(new CustomEvent('orbit:navigate', { detail: { tab: 'plannr' } }));
+              }}
+              className="px-2.5 py-0.5 rounded-full bg-[#D95338] text-white font-sans font-bold text-[10px] hover:bg-[#c44329] transition active:scale-95 flex items-center gap-1 shadow-sm"
+            >
+              <span>🎒 Open Plannr Studio</span>
+              <span>➔</span>
+            </button>
           </div>
 
           {/* Chat Messages Stream */}

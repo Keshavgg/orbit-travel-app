@@ -182,9 +182,9 @@ export default function Home() {
   };
 
   const handleTabChange = (newTab: string) => {
-    if (newTab === 'plannr') {
+    if (newTab === 'plannr' || newTab === 'recommender') {
       setAppMode('plannr');
-      addToast('success', 'Plannr Studio Launched', '7-Screen AI Itinerary & Reel Builder loaded.');
+      addToast('info', 'Plannr AI Active', 'Personalized AI trip planning & budget recommendations.');
       return;
     }
     setActiveTab(newTab);
@@ -192,7 +192,6 @@ export default function Home() {
       setIsWhatsAppOpen(true);
       addToast('success', '24/7 Live Chat Connected', 'Orbit Travel Desk is online and ready to assist.');
     }
-    else if (newTab === 'recommender') addToast('info', 'AI Recommender Active', 'Tell Orbit AI your mood and budget for instant trip recommendations.');
     else if (newTab === 'events') addToast('info', 'Events & City Life (Evergreen)', 'Cafes, rooftops, nightlife & mega concerts loaded with time filters.');
     else if (newTab === 'visa') triggerFlyscanWipe('thailand');
     else if (newTab === 'flights') triggerFlyscanWipe('goa');
@@ -200,6 +199,12 @@ export default function Home() {
     else if (newTab === 'dirtcheap') triggerFlyscanWipe('goa');
     else if (newTab === 'weekend') triggerFlyscanWipe('rishikesh');
   };
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('orbit:mode-change', { detail: { mode: appMode } }));
+    }
+  }, [appMode]);
 
   React.useEffect(() => {
     const handleOrbitNav = (e: any) => {

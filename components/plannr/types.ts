@@ -9,6 +9,12 @@ export interface PlannrPackage {
   tag?: string;
   rating?: number;
   inclusions?: string[];
+  vibe?: string;
+  location?: string;
+  tagline?: string;
+  matchScore?: number;
+  duration?: string;
+  itinerary?: { day: string; title: string; desc: string }[];
 }
 
 export interface PlannrTripStop {

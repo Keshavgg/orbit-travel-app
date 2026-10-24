@@ -398,6 +398,43 @@ export const PlannrProvider: React.FC<{
     if (data?.day) {
       setActiveDayNumber(data.day);
     }
+    if (data?.package) {
+      const p = data.package;
+      setActiveTrip({
+        id: p.id,
+        title: p.title,
+        destination: p.country || p.location || 'Selected Destination',
+        start_date: '12 Nov',
+        end_date: `${12 + (p.days || 4)} Nov`,
+        total_days: p.days || 4,
+        budget_per_person: p.starting_price,
+        total_budget: p.starting_price * 4,
+        currency: 'INR',
+        status: 'active',
+        days: p.itinerary && p.itinerary.length > 0 ? p.itinerary.map((it: any, idx: number) => ({
+          id: `day_${idx + 1}`,
+          day_number: idx + 1,
+          day_title: `${it.day} · ${it.title}`,
+          summary: it.desc,
+          stops: [
+            {
+              id: `stop_${p.id}_${idx + 1}`,
+              time_slot: idx === 0 ? '09:00 AM' : '11:30 AM',
+              place_name: it.title,
+              subtitle: it.desc,
+              category: idx === 0 ? 'Stay' : 'Activity',
+              price_per_person: Math.round(p.starting_price / (p.days || 4)),
+              is_booked: true,
+              is_reserve_only: false,
+              is_from_reel: false,
+              booking_ref: `PLN-${p.id.toUpperCase().slice(0, 5)}-${idx + 1}`,
+            }
+          ]
+        })) : DEFAULT_BALI_TRIP.days,
+        members: DEFAULT_BALI_TRIP.members,
+        poll: DEFAULT_BALI_TRIP.poll,
+      });
+    }
     // Scroll to top
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });

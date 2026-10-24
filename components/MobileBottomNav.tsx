@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { 
@@ -33,8 +33,24 @@ export default function MobileBottomNav({
   const isChat = pathname === '/chat';
   const { user, logout } = useAuth();
 
+  const [isPlannrMode, setIsPlannrMode] = useState(false);
   const [isAccountSheetOpen, setIsAccountSheetOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  useEffect(() => {
+    const handleMode = (e: any) => {
+      setIsPlannrMode(e.detail?.mode === 'plannr');
+    };
+    window.addEventListener('orbit:mode-change', handleMode);
+    if (pathname === '/plannr') {
+      setIsPlannrMode(true);
+    }
+    return () => window.removeEventListener('orbit:mode-change', handleMode);
+  }, [pathname]);
+
+  if (pathname === '/plannr' || isPlannrMode) {
+    return null;
+  }
 
   const handleProfileClick = () => {
     if (user) {
