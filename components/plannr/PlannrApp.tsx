@@ -21,7 +21,7 @@ interface PlannrAppContentProps {
 }
 
 const PlannrAppContent: React.FC<PlannrAppContentProps> = ({ onExitToOrbit }) => {
-  const { currentScreen, navigate, toastMessage, toastType } = usePlannr();
+  const { currentScreen, screenData, navigate, setActiveTrip, toastMessage, toastType } = usePlannr();
 
   const showBottomNav =
     currentScreen === 'home' ||
@@ -52,23 +52,27 @@ const PlannrAppContent: React.FC<PlannrAppContentProps> = ({ onExitToOrbit }) =>
 
       {/* Screen 1: Home Screen */}
       {currentScreen === 'home' && (
-        <HomeScreen
-          onNavigate={navigate}
-          onSelectTrip={(tripId) => navigate('itinerary', { tripId })}
-        />
+        <HomeScreen onNavigate={navigate} />
       )}
 
       {/* Screen 2: Plan with AI */}
       {currentScreen === 'plan-ai' && (
-        <PlanWithAiScreen onNavigate={navigate} />
+        <PlanWithAiScreen
+          onNavigate={navigate}
+          initialIdea={screenData?.initialIdea}
+          onTripGenerated={(trip) => setActiveTrip(trip)}
+        />
       )}
 
       {/* Screen 3: Reel → Itinerary */}
       {currentScreen === 'reel-scan' && (
-        <ReelToItineraryScreen onNavigate={navigate} />
+        <ReelToItineraryScreen
+          onNavigate={navigate}
+          onItineraryBuilt={(trip) => setActiveTrip(trip)}
+        />
       )}
 
-      {/* Screen 4: Bali with the boys Itinerary */}
+      {/* Screen 4: Dynamic Custom Itinerary Screen */}
       {currentScreen === 'itinerary' && (
         <ItineraryTimelineScreen onNavigate={navigate} />
       )}

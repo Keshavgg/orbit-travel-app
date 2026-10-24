@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Sparkles, Mic, Film, Check, Loader2 } from 'lucide-react';
 import { PlannrScreen, PlannrTrip } from './types';
 import { BaliVectorArt } from './VectorArt';
@@ -27,6 +27,20 @@ export const PlanWithAiScreen: React.FC<PlanWithAiScreenProps> = ({
   const [travellers, setTravellers] = useState<string>('4 · Friends');
   const [budgetPerPerson, setBudgetPerPerson] = useState<string>('₹60,000');
 
+  useEffect(() => {
+    if (initialIdea && initialIdea.trim()) {
+      setTripIdea(initialIdea);
+      const lower = initialIdea.toLowerCase();
+      if (lower.includes('goa')) setDestination('Goa');
+      else if (lower.includes('thailand') || lower.includes('phuket')) setDestination('Thailand');
+      else if (lower.includes('dubai')) setDestination('Dubai');
+      else if (lower.includes('japan') || lower.includes('tokyo')) setDestination('Japan');
+      else if (lower.includes('rishikesh')) setDestination('Rishikesh');
+      else if (lower.includes('kashmir')) setDestination('Kashmir');
+      else if (lower.includes('vietnam')) setDestination('Vietnam');
+    }
+  }, [initialIdea]);
+
   const travelStyles = ['Chill', 'Adventure', 'Luxury', 'Budget'];
   const allInterests = [
     'Beaches',
@@ -50,10 +64,11 @@ export const PlanWithAiScreen: React.FC<PlanWithAiScreenProps> = ({
     try {
       const payload = {
         prompt: tripIdea,
-        style: selectedStyle.toLowerCase(),
+        style: selectedStyle,
         interests: selectedInterests,
-        group_size: 4,
-        max_budget_per_person: 60000,
+        destination: destination,
+        budget_per_person: parseInt(budgetPerPerson.replace(/[^0-9]/g, '')) || 60000,
+        travellers: travellers,
       };
 
       const res = await fetch('/api/plannr/generate', {
@@ -70,17 +85,138 @@ export const PlanWithAiScreen: React.FC<PlanWithAiScreenProps> = ({
         onNavigate('itinerary', { trip: generatedData });
         return;
       }
-    } catch {
-      // Backend fallback gracefully handles network/SSR
+    } catch (e) {
+      console.error('Failed to generate itinerary via backend:', e);
     } finally {
       setIsGenerating(false);
     }
 
-    // Default seamless transition to Bali Itinerary (Screen 4)
-    onNavigate('itinerary', {
-      tripId: 'trip_bali_boys',
-      title: 'Bali with the boys',
-    });
+    // Dynamic Client-side Fallback generator based on tripIdea
+    const lower = tripIdea.toLowerCase();
+    const dest = lower.includes('goa') ? 'Goa' : lower.includes('thailand') ? 'Thailand' : lower.includes('dubai') ? 'Dubai' : lower.includes('rishikesh') ? 'Rishikesh' : lower.includes('japan') ? 'Japan' : destination || 'Bali';
+    const fallbackTrip: PlannrTrip = {
+      id: `trip_${Date.now()}`,
+      title: `${dest} Adventure (${selectedStyle})`,
+      destination: dest,
+      start_date: dates.split('–')[0]?.trim() || '12 Nov',
+      end_date: dates.split('–')[1]?.trim() || '18 Nov',
+      total_days: 7,
+      budget_per_person: parseInt(budgetPerPerson.replace(/[^0-9]/g, '')) || 60000,
+      total_budget: (parseInt(budgetPerPerson.replace(/[^0-9]/g, '')) || 60000) * 4,
+      currency: 'INR',
+      status: 'active',
+      days: [
+        {
+          id: 'day_1',
+          day_number: 1,
+          day_title: `Day 1 · Arrival & Check-in at ${dest}`,
+          summary: `Touchdown in ${dest}, private airport cab transfer to luxury stay, evening sunset sundowner.`,
+          stops: [
+            {
+              id: 's1_1',
+              time_slot: '11:00 AM',
+              place_name: `${dest} Boutique Stay Check-in`,
+              subtitle: 'Private pool suite · Welcome drink',
+              category: 'Stay',
+              price_per_person: 4500,
+              is_booked: true,
+              is_reserve_only: false,
+            },
+            {
+              id: 's1_2',
+              time_slot: '04:00 PM',
+              place_name: `${dest} Scenic Sunset Trail`,
+              subtitle: 'Breezy golden hour views & photography',
+              category: 'Activity',
+              price_per_person: 1200,
+              is_booked: true,
+              is_reserve_only: false,
+            },
+            {
+              id: 's1_3',
+              time_slot: '08:00 PM',
+              place_name: 'Welcome Dinner & Cocktails',
+              subtitle: 'Curated local cuisine dining',
+              category: 'Food',
+              price_per_person: 1800,
+              is_booked: false,
+              is_reserve_only: true,
+            }
+          ]
+        },
+        {
+          id: 'day_2',
+          day_number: 2,
+          day_title: `Day 2 · ${selectedInterests[0] || 'Adventure'} & Signature Highlights`,
+          summary: `Exploring the top rated landmarks and scenic hotspots in ${dest}.`,
+          stops: [
+            {
+              id: 's2_1',
+              time_slot: '09:00 AM',
+              place_name: `${dest} Landmark Guided Exploration`,
+              subtitle: 'Priority VIP fast-track entry pass',
+              category: 'Activity',
+              price_per_person: 2400,
+              is_booked: true,
+              is_reserve_only: false,
+            },
+            {
+              id: 's2_2',
+              time_slot: '01:30 PM',
+              place_name: 'Artisanal Brunch & Coffee',
+              subtitle: 'High-rated neighborhood cafe',
+              category: 'Food',
+              price_per_person: 1100,
+              is_booked: false,
+              is_reserve_only: true,
+            },
+            {
+              id: 's2_3',
+              time_slot: '06:00 PM',
+              place_name: 'Nightlife & Cultural Walk',
+              subtitle: 'Vibrant local bazaar & live music',
+              category: 'Culture',
+              price_per_person: 800,
+              is_booked: false,
+              is_reserve_only: false,
+            }
+          ]
+        },
+        {
+          id: 'day_3',
+          day_number: 3,
+          day_title: `Day 3 · ${selectedInterests[1] || 'Scenic'} Getaway & Cruise`,
+          summary: `Exclusive day excursion with private boat/cab and group memories.`,
+          stops: [
+            {
+              id: 's3_1',
+              time_slot: '08:30 AM',
+              place_name: `${dest} Island & Coastal Excursion`,
+              subtitle: 'Speedboat cruise & snorkeling gear included',
+              category: 'Activity',
+              price_per_person: 3200,
+              is_booked: true,
+              is_reserve_only: false,
+            },
+            {
+              id: 's3_2',
+              time_slot: '07:30 PM',
+              place_name: 'Farewell Beachside Feast',
+              subtitle: 'Live seafood BBQ & group celebration',
+              category: 'Food',
+              price_per_person: 2500,
+              is_booked: false,
+              is_reserve_only: true,
+            }
+          ]
+        }
+      ]
+    };
+
+    if (onTripGenerated) {
+      onTripGenerated(fallbackTrip);
+    }
+    onNavigate('itinerary', { trip: fallbackTrip });
   };
 
   return (

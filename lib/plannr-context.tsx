@@ -23,9 +23,11 @@ export interface MatchedTraveler {
 
 export interface PlannrContextType {
   currentScreen: PlannrScreen;
+  screenData: any;
   navigate: (screen: PlannrScreen, data?: any) => void;
   goBack: () => void;
   activeTrip: PlannrTrip;
+  setActiveTrip: (trip: PlannrTrip) => void;
   activeDayNumber: number;
   setActiveDayNumber: (day: number) => void;
   isLoading: boolean;
@@ -368,6 +370,7 @@ export const PlannrProvider: React.FC<{
 }> = ({ children, initialScreen = 'home' }) => {
   const [currentScreen, setCurrentScreen] = useState<PlannrScreen>(initialScreen);
   const [screenHistory, setScreenHistory] = useState<PlannrScreen[]>([initialScreen]);
+  const [screenData, setScreenData] = useState<any>(null);
   const [activeTrip, setActiveTrip] = useState<PlannrTrip>(DEFAULT_BALI_TRIP);
   const [activeDayNumber, setActiveDayNumber] = useState<number>(1);
   const [matchedTravelers, setMatchedTravelers] = useState<MatchedTraveler[]>(DEFAULT_MATCHED_TRAVELERS);
@@ -395,51 +398,110 @@ export const PlannrProvider: React.FC<{
   const navigate = useCallback((screen: PlannrScreen, data?: any) => {
     setScreenHistory((prev) => [...prev, screen]);
     setCurrentScreen(screen);
+    setScreenData(data || null);
     if (data?.day) {
       setActiveDayNumber(data.day);
     }
-    if (data?.package) {
+    // 1. If full generated trip is passed directly
+    if (data?.trip) {
+      const t = data.trip;
+      setActiveTrip({
+        id: t.id || `trip_${Date.now()}`,
+        title: t.title || 'Custom AI Itinerary',
+        destination: t.destination || 'Selected Destination',
+        start_date: t.start_date || '12 Nov',
+        end_date: t.end_date || '18 Nov',
+        total_days: t.total_days || (t.days ? t.days.length : 7),
+        budget_per_person: t.budget_per_person || 52000,
+        total_budget: t.total_budget || 208000,
+        currency: t.currency || 'INR',
+        status: t.status || 'active',
+        days: t.days && t.days.length > 0 ? t.days : DEFAULT_BALI_TRIP.days,
+        members: t.members && t.members.length > 0 ? t.members : DEFAULT_BALI_TRIP.members,
+        poll: t.poll || DEFAULT_BALI_TRIP.poll,
+      });
+      showToast(`Itinerary Loaded: ${t.title || 'Trip'}`, 'success');
+    }
+    // 2. If package is passed
+    else if (data?.package) {
       const p = data.package;
+      const dayCount = p.days || 4;
+      const perDayPrice = Math.round(p.starting_price / dayCount);
+      const generatedDays: PlannrTripDay[] = (p.itinerary && p.itinerary.length > 0)
+        ? p.itinerary.map((it: any, idx: number) => ({
+            id: `day_${idx + 1}_${p.id}`,
+            day_number: idx + 1,
+            day_title: `${it.day} · ${it.title}`,
+            summary: it.desc,
+            stops: [
+              {
+                id: `stop_${p.id}_${idx + 1}_1`,
+                time_slot: idx === 0 ? '11:00 AM' : '09:30 AM',
+                place_name: it.title,
+                subtitle: it.desc,
+                category: idx === 0 ? 'Stay' : 'Activity',
+                price_per_person: perDayPrice,
+                is_booked: true,
+                is_reserve_only: false,
+                is_from_reel: false,
+                booking_ref: `PLN-${(p.id || 'TRIP').toUpperCase().slice(0, 5)}-${idx + 1}`,
+              },
+              {
+                id: `stop_${p.id}_${idx + 1}_2`,
+                time_slot: '02:00 PM',
+                place_name: `${p.location || p.country} Signature Highlight`,
+                subtitle: p.tagline || 'Curated sightseeing & cuisine experience',
+                category: 'Food',
+                price_per_person: Math.round(perDayPrice * 0.4),
+                is_booked: false,
+                is_reserve_only: true,
+                is_from_reel: false,
+              },
+              {
+                id: `stop_${p.id}_${idx + 1}_3`,
+                time_slot: '06:30 PM',
+                place_name: 'Sunset & Evening Leisure Walk',
+                subtitle: 'Scenic relaxation & vibrant local market trail',
+                category: 'Culture',
+                price_per_person: 0,
+                is_booked: true,
+                is_reserve_only: false,
+                is_from_reel: false,
+              }
+            ]
+          }))
+        : DEFAULT_BALI_TRIP.days;
+
       setActiveTrip({
         id: p.id,
         title: p.title,
-        destination: p.country || p.location || 'Selected Destination',
-        start_date: '12 Nov',
-        end_date: `${12 + (p.days || 4)} Nov`,
-        total_days: p.days || 4,
+        destination: p.location || p.country || 'Destination',
+        start_date: '15 Nov',
+        end_date: `${15 + dayCount} Nov`,
+        total_days: dayCount,
         budget_per_person: p.starting_price,
         total_budget: p.starting_price * 4,
         currency: 'INR',
         status: 'active',
-        days: p.itinerary && p.itinerary.length > 0 ? p.itinerary.map((it: any, idx: number) => ({
-          id: `day_${idx + 1}`,
-          day_number: idx + 1,
-          day_title: `${it.day} · ${it.title}`,
-          summary: it.desc,
-          stops: [
-            {
-              id: `stop_${p.id}_${idx + 1}`,
-              time_slot: idx === 0 ? '09:00 AM' : '11:30 AM',
-              place_name: it.title,
-              subtitle: it.desc,
-              category: idx === 0 ? 'Stay' : 'Activity',
-              price_per_person: Math.round(p.starting_price / (p.days || 4)),
-              is_booked: true,
-              is_reserve_only: false,
-              is_from_reel: false,
-              booking_ref: `PLN-${p.id.toUpperCase().slice(0, 5)}-${idx + 1}`,
-            }
-          ]
-        })) : DEFAULT_BALI_TRIP.days,
+        days: generatedDays,
         members: DEFAULT_BALI_TRIP.members,
-        poll: DEFAULT_BALI_TRIP.poll,
+        poll: {
+          id: `poll_${p.id}`,
+          question: `Vote on ${p.title} Day 2 evening activity?`,
+          expires_in_hours: 24,
+          options: [
+            { id: 'opt_1', title: 'Group Dinner & Sundowner', votes: 3, voted_by: ['AK', 'RS', 'VJ'] },
+            { id: 'opt_2', title: 'Night Market Tour', votes: 1, voted_by: ['NK'] }
+          ]
+        },
       });
+      showToast(`Selected: ${p.title}`, 'success');
     }
     // Scroll to top
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, []);
+  }, [showToast]);
 
   const goBack = useCallback(() => {
     setScreenHistory((prev) => {
@@ -865,9 +927,11 @@ export const PlannrProvider: React.FC<{
     <PlannrContext.Provider
       value={{
         currentScreen,
+        screenData,
         navigate,
         goBack,
         activeTrip,
+        setActiveTrip,
         activeDayNumber,
         setActiveDayNumber,
         isLoading,

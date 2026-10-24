@@ -275,53 +275,47 @@ const VIBE_FILTERS = [
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
   onNavigate,
-  onSelectTrip,
 }) => {
   const [budget, setBudget] = useState<number>(55000);
   const [selectedVibe, setSelectedVibe] = useState<string>('all');
   const [packages, setPackages] = useState<PlannrPackage[]>(COMBINED_RECOMMENDER_PACKAGES);
-  const [loadingPackages, setLoadingPackages] = useState<boolean>(false);
   const [favorites, setFavorites] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Fetch packages filtered by budget from backend or combine with curated recommender database
-  const fetchPackages = useCallback(async (maxBudget: number) => {
-    try {
-      setLoadingPackages(true);
-      const res = await fetch(`/api/plannr/packages?max_budget=${maxBudget}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && Array.isArray(data.packages) && data.packages.length > 0) {
-          // Merge backend packages with any extra rich recommender packages not in backend
-          const backendIds = new Set(data.packages.map((p: any) => p.id));
-          const extraCurated = COMBINED_RECOMMENDER_PACKAGES.filter(
-            (cp) => !backendIds.has(cp.id) && cp.starting_price <= maxBudget
-          );
-          setPackages([...data.packages, ...extraCurated]);
-          return;
-        }
-      }
-      // Client-side fallback filter
-      const filtered = COMBINED_RECOMMENDER_PACKAGES.filter(
-        (p) => p.starting_price <= maxBudget
-      );
-      setPackages(filtered.length > 0 ? filtered : [COMBINED_RECOMMENDER_PACKAGES[0]]);
-    } catch {
-      const filtered = COMBINED_RECOMMENDER_PACKAGES.filter(
-        (p) => p.starting_price <= maxBudget
-      );
-      setPackages(filtered.length > 0 ? filtered : [COMBINED_RECOMMENDER_PACKAGES[0]]);
-    } finally {
-      setLoadingPackages(false);
-    }
+  // Initial load: sync any additional custom backend packages
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/plannr/packages')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isMounted || !data || !Array.isArray(data.packages) || data.packages.length === 0) return;
+        setPackages((prev) => {
+          const map = new Map<string, PlannrPackage>();
+          prev.forEach((p) => map.set(p.id, p));
+          data.packages.forEach((bp: any) => {
+            const existing = map.get(bp.id);
+            map.set(bp.id, {
+              ...existing,
+              ...bp,
+              itinerary: existing?.itinerary || bp.itinerary,
+              vibe: existing?.vibe || bp.vibe,
+              matchScore: existing?.matchScore || bp.matchScore,
+              duration: existing?.duration || `${bp.days} Days / ${bp.days - 1} Nights`,
+            });
+          });
+          return Array.from(map.values());
+        });
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  useEffect(() => {
-    fetchPackages(budget);
-  }, [budget, fetchPackages]);
-
-  // Vibe filtering
+  // Real-time synchronous filtering: 0ms latency, buttery smooth 60fps!
   const filteredPackages = packages.filter((pkg) => {
+    const matchesBudget = pkg.starting_price <= budget;
+    if (!matchesBudget) return false;
     if (selectedVibe === 'all') return true;
     if (pkg.vibe === selectedVibe) return true;
     const t = (pkg.title + ' ' + (pkg.vector_type || '') + ' ' + (pkg.tag || '')).toLowerCase();
@@ -384,7 +378,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   );
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] text-[#151E28] pb-28 font-sans antialiased max-w-md mx-auto relative select-none">
+    <div className="min-h-screen bg-[#FAF7F2] text-[#151E28] pb-48 font-sans antialiased max-w-md mx-auto relative select-none">
       {/* Top Header */}
       <header className="px-5 pt-8 pb-4 flex items-center justify-between">
         <div>
@@ -591,7 +585,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <div
                   key={pkg.id}
                   onClick={() => {
-                    if (onSelectTrip) onSelectTrip(pkg.id);
                     onNavigate('itinerary', { packageId: pkg.id, package: pkg });
                   }}
                   className="snap-start flex-shrink-0 w-[240px] sm:w-[260px] bg-white rounded-3xl p-3 border border-[#EDE7DF] shadow-sm hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"

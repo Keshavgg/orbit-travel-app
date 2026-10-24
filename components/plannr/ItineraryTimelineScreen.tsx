@@ -124,7 +124,7 @@ export const ItineraryTimelineScreen: React.FC<ItineraryTimelineScreenProps> = (
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white text-[#151E28] font-bold text-sm shadow-md active:scale-95 transition-transform hover:bg-slate-50"
             >
               <Users className="w-4 h-4 text-[#151E28]" />
-              <span>4</span>
+              <span>{activeTrip.members?.length || 4}</span>
             </button>
 
             {/* Share Button */}
@@ -142,13 +142,13 @@ export const ItineraryTimelineScreen: React.FC<ItineraryTimelineScreenProps> = (
         {/* Header Text Overlay (Base of Hero) */}
         <div className="absolute bottom-4 left-4 right-4 z-10 text-white">
           <div className="inline-block text-[11px] font-black uppercase tracking-wider text-white/90 drop-shadow-sm mb-1">
-            AI-BUILT · EDITED BY 2
+            AI-BUILT ITINERARY · {activeTrip.destination?.toUpperCase()}
           </div>
-          <h1 className="text-3xl font-black tracking-tight text-white drop-shadow-md leading-tight">
-            Bali with the boys
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white drop-shadow-md leading-tight">
+            {activeTrip.title}
           </h1>
           <p className="text-xs text-white/95 font-medium drop-shadow-sm mt-0.5">
-            12 – 18 Nov · 7 days · ₹52,400 / person
+            {activeTrip.start_date} – {activeTrip.end_date} · {activeTrip.total_days} days · ₹{activeTrip.budget_per_person?.toLocaleString('en-IN')} / person
           </p>
         </div>
       </div>
