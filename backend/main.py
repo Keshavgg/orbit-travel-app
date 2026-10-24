@@ -6,10 +6,24 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from database import engine, Base, SessionLocal, get_db
-from models import Trip, Booking, DistressedFlight, Destination, Hotel, FlightTicket, EventConcert, User, SessionToken
+from models import (
+    Trip,
+    Booking,
+    DistressedFlight,
+    Destination,
+    Hotel,
+    FlightTicket,
+    EventConcert,
+    User,
+    SessionToken,
+    PlannrPackage,
+    PlannrTrip,
+    PlannrReel,
+)
 from seed import seed_database
 from seed_massive import seed_all_massive_data
-from routers import trips, flights, visas, bookings, chat, gst, callbacks, hotels, events, rag, auth
+from seed_plannr import seed_plannr_data
+from routers import trips, flights, visas, bookings, chat, gst, callbacks, hotels, events, rag, auth, plannr
 
 
 @asynccontextmanager
@@ -21,6 +35,7 @@ async def lifespan(app: FastAPI):
     try:
         seed_database(db)
         seed_all_massive_data()
+        seed_plannr_data(db)
     finally:
         db.close()
     yield
@@ -67,6 +82,7 @@ app.include_router(chat.router)
 app.include_router(rag.router)
 app.include_router(gst.router)
 app.include_router(callbacks.router)
+app.include_router(plannr.router)
 
 
 @app.get("/", tags=["Root"])
@@ -78,6 +94,12 @@ def root():
         "redoc": "/redoc",
         "version": "1.0.0",
         "endpoints": [
+            "/api/plannr/packages (Curated Global Packages)",
+            "/api/plannr/generate (AI Natural Language Itinerary Planner)",
+            "/api/plannr/reel/scan (Travel Reel Place Extraction)",
+            "/api/plannr/reel/build-itinerary (Reel to Multi-day Trip)",
+            "/api/plannr/trips/:trip_id (Full Trip Detail & Cart Breakdown)",
+            "/api/plannr/reels (Travel Video Reels)",
             "/api/hotels (520+ Stays & Villas)",
             "/api/flights (520+ Domestic & Intl Flights)",
             "/api/events (110+ Live Concerts & Music Fests)",
@@ -111,6 +133,9 @@ def health_check(db: Session = Depends(get_db)):
     long_trips = db.query(Trip).filter(Trip.duration_type == "long").count()
     active_flight_drops = db.query(DistressedFlight).count()
     total_bookings = db.query(Booking).count()
+    total_plannr_packages = db.query(PlannrPackage).count()
+    total_plannr_trips = db.query(PlannrTrip).count()
+    total_plannr_reels = db.query(PlannrReel).count()
 
     return {
         "status": "HEALTHY",
@@ -126,5 +151,8 @@ def health_check(db: Session = Depends(get_db)):
             "long_trips": long_trips,
             "distressed_flight_drops": active_flight_drops,
             "total_bookings": total_bookings,
+            "plannr_packages_count": total_plannr_packages,
+            "plannr_trips_count": total_plannr_trips,
+            "plannr_reels_count": total_plannr_reels,
         },
     }

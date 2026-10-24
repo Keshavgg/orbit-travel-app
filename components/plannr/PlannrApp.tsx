@@ -1,0 +1,132 @@
+'use client';
+
+import React from 'react';
+import { PlannrScreen } from './types';
+import { PlannrProvider, usePlannr } from '@/lib/plannr-context';
+import HomeScreen from './HomeScreen';
+import PlanWithAiScreen from './PlanWithAiScreen';
+import ReelToItineraryScreen from './ReelToItineraryScreen';
+import TravelReelsScreen from './TravelReelsScreen';
+import { ItineraryTimelineScreen } from './ItineraryTimelineScreen';
+import { GroupCollabScreen } from './GroupCollabScreen';
+import { TripCheckoutScreen } from './TripCheckoutScreen';
+import { AddStopModal } from './AddStopModal';
+import { GroupChatModal } from './GroupChatModal';
+import { InviteTravelerModal } from './InviteTravelerModal';
+import { BookingConfirmedModal } from './BookingConfirmedModal';
+import { PlannrBottomNav } from './PlannrBottomNav';
+
+interface PlannrAppContentProps {
+  onExitToOrbit?: () => void;
+}
+
+const PlannrAppContent: React.FC<PlannrAppContentProps> = ({ onExitToOrbit }) => {
+  const { currentScreen, navigate, toastMessage, toastType } = usePlannr();
+
+  const showBottomNav =
+    currentScreen === 'home' ||
+    currentScreen === 'itinerary' ||
+    currentScreen === 'group' ||
+    currentScreen === 'checkout';
+
+  return (
+    <div className="min-h-screen bg-[#FAF7F2] font-sans antialiased text-[#151E28] relative">
+      {/* Optional Top Mode Switcher pill to toggle back to Orbit OS */}
+      {onExitToOrbit && (
+        <div className="fixed top-2 right-2 z-50">
+          <button
+            type="button"
+            onClick={onExitToOrbit}
+            className="bg-[#151E28]/80 hover:bg-[#151E28] backdrop-blur-md text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-md transition-all flex items-center gap-1.5"
+          >
+            <span>Orbit OS</span>
+            <span>⇄</span>
+          </button>
+        </div>
+      )}
+
+      {/* Screen 1: Home Screen */}
+      {currentScreen === 'home' && (
+        <HomeScreen
+          onNavigate={navigate}
+          onSelectTrip={(tripId) => navigate('itinerary', { tripId })}
+        />
+      )}
+
+      {/* Screen 2: Plan with AI */}
+      {currentScreen === 'plan-ai' && (
+        <PlanWithAiScreen onNavigate={navigate} />
+      )}
+
+      {/* Screen 3: Reel → Itinerary */}
+      {currentScreen === 'reel-scan' && (
+        <ReelToItineraryScreen onNavigate={navigate} />
+      )}
+
+      {/* Screen 4: Bali with the boys Itinerary */}
+      {currentScreen === 'itinerary' && (
+        <ItineraryTimelineScreen onNavigate={navigate} />
+      )}
+
+      {/* Screen 5: Group Collaboration & Live Voting */}
+      {currentScreen === 'group' && (
+        <GroupCollabScreen onNavigate={navigate} />
+      )}
+
+      {/* Screen 6: Split & Settle Checkout */}
+      {currentScreen === 'checkout' && (
+        <TripCheckoutScreen onNavigate={navigate} />
+      )}
+
+      {/* Screen 7: Travel Reels Feed */}
+      {currentScreen === 'reels' && (
+        <TravelReelsScreen onNavigate={navigate} />
+      )}
+
+      {/* Modals & Overlays */}
+      <AddStopModal />
+      <GroupChatModal />
+      <InviteTravelerModal />
+      <BookingConfirmedModal />
+
+      {/* Global Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-sm w-[90%] bg-[#151E28] text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-2xl border border-white/10 flex items-center gap-2.5 animate-slide-down">
+          <div
+            className={`w-2 h-2 rounded-full ${
+              toastType === 'success'
+                ? 'bg-emerald-400'
+                : toastType === 'error'
+                ? 'bg-rose-400'
+                : 'bg-amber-400'
+            }`}
+          />
+          <span className="flex-1 leading-snug">{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Bottom Nav Bar for main views */}
+      {showBottomNav && (
+        <PlannrBottomNav currentScreen={currentScreen} onNavigate={navigate} />
+      )}
+    </div>
+  );
+};
+
+interface PlannrAppProps {
+  initialScreen?: PlannrScreen;
+  onExitToOrbit?: () => void;
+}
+
+export const PlannrApp: React.FC<PlannrAppProps> = ({
+  initialScreen = 'home',
+  onExitToOrbit,
+}) => {
+  return (
+    <PlannrProvider initialScreen={initialScreen}>
+      <PlannrAppContent onExitToOrbit={onExitToOrbit} />
+    </PlannrProvider>
+  );
+};
+
+export default PlannrApp;

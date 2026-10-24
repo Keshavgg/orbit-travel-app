@@ -373,3 +373,210 @@ class LogoutResponse(BaseModel):
     message: str
 
 
+# ── Plannr Superapp Schemas ──
+
+class PlannrPackageResponse(BaseModel):
+    id: str
+    title: str
+    country: str
+    days: int
+    starting_price: int
+    image: str
+    vector_type: Optional[str] = None
+    tag: str
+    rating: float
+    inclusions: List[str]
+
+    class Config:
+        from_attributes = True
+
+
+class PlannrPackagesListResponse(BaseModel):
+    total: int
+    packages: List[PlannrPackageResponse]
+
+
+class PlannrTripStopResponse(BaseModel):
+    id: str
+    trip_day_id: str
+    time_slot: str
+    place_name: str
+    subtitle: Optional[str] = None
+    category: str
+    price_per_person: int
+    is_booked: bool
+    is_reserve_only: bool
+    is_from_reel: bool
+    booking_ref: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class PlannrTripDayResponse(BaseModel):
+    id: str
+    trip_id: str
+    day_number: int
+    day_title: str
+    summary: Optional[str] = None
+    stops: List[PlannrTripStopResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+class PlannrTripMemberResponse(BaseModel):
+    id: str
+    trip_id: str
+    name: str
+    initials: str
+    status: str
+    share_amount: int
+    is_current_user: bool
+
+    class Config:
+        from_attributes = True
+
+
+class PlannrPollOption(BaseModel):
+    id: str
+    title: str
+    votes: int
+    voted_by: List[str]
+
+
+class PlannrPollResponse(BaseModel):
+    id: str
+    trip_id: str
+    question: str
+    ends_in_hours: int
+    options: List[PlannrPollOption]
+
+    class Config:
+        from_attributes = True
+
+
+class PlannrMatchedTravelerResponse(BaseModel):
+    id: str
+    trip_id: Optional[str] = None
+    name: str
+    city: str
+    match_pct: int
+    trips_count: int
+    interests: List[str]
+    date_flexibility: str
+    invited: bool
+
+    class Config:
+        from_attributes = True
+
+
+class PlannrCartBreakdown(BaseModel):
+    total_stops: int
+    booked_stops_count: int
+    unbooked_stops_count: int
+    total_cost: int
+    categories_breakdown: Dict[str, int]
+    share_per_person: int
+
+
+class PlannrTripDetailResponse(BaseModel):
+    id: str
+    title: str
+    destination: str
+    start_date: str
+    end_date: str
+    total_days: int
+    budget_per_person: int
+    total_budget: int
+    currency: str
+    status: str
+    days: List[PlannrTripDayResponse]
+    members: List[PlannrTripMemberResponse]
+    poll: Optional[PlannrPollResponse] = None
+    matched_travelers: List[PlannrMatchedTravelerResponse] = []
+    cart_breakdown: Optional[PlannrCartBreakdown] = None
+
+    class Config:
+        from_attributes = True
+
+
+class PlannrReelPlace(BaseModel):
+    name: str
+    match_pct: int
+    timestamp: Optional[str] = None
+    duration: Optional[str] = None
+    tag: Optional[str] = None
+
+
+class PlannrReelResponse(BaseModel):
+    id: str
+    reel_url: str
+    creator_handle: str
+    creator_name: str
+    creator_avatar: str
+    video_title: str
+    caption: Optional[str] = None
+    places_detected: List[PlannrReelPlace]
+    likes_count: int
+    comments_count: int
+    video_poster_url: str
+
+    class Config:
+        from_attributes = True
+
+
+class PlannrGenerateRequest(BaseModel):
+    prompt: str
+    style: Optional[str] = "Balanced"
+    interests: Optional[List[str]] = None
+
+
+class PlannrReelScanRequest(BaseModel):
+    url: str
+
+
+class PlannrReelBuildItineraryRequest(BaseModel):
+    places: List[Any]
+    trip_name: Optional[str] = "Reel Inspired Trip"
+    total_days: Optional[int] = 3
+
+
+class PlannrAddStopRequest(BaseModel):
+    day_number: Optional[int] = 1
+    trip_day_id: Optional[str] = None
+    time_slot: str = "14:00"
+    place_name: str
+    subtitle: Optional[str] = None
+    category: str = "Activity"
+    price: Optional[int] = None
+    price_per_person: Optional[int] = 0
+    is_from_reel: Optional[bool] = False
+
+
+class PlannrRegenerateDayRequest(BaseModel):
+    day_number: int = 1
+    theme: Optional[str] = None
+
+
+class PlannrVoteRequest(BaseModel):
+    poll_id: Optional[str] = None
+    option_id: str
+    voter_initials: Optional[str] = "RS"
+    voter_name: Optional[str] = "Rohit Sharma"
+
+
+class PlannrInviteRequest(BaseModel):
+    traveler_id: Optional[str] = None
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    city: Optional[str] = None
+
+
+class PlannrPayShareRequest(BaseModel):
+    payment_method: Optional[str] = "UPI_INSTANT"
+    upi_id: Optional[str] = "rohit@okhdfcbank"
+
+
+
