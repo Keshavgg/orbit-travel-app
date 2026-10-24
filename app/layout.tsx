@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Bricolage_Grotesque, Figtree, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
+import { AuthProvider } from '@/lib/auth-context';
 
 const bricolage = Bricolage_Grotesque({
   subsets: ['latin'],
@@ -33,7 +34,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${bricolage.variable} ${figtree.variable} ${jetbrainsMono.variable}`}>
       <body className="min-h-screen flex flex-col font-sans bg-[#F2F5FA] text-[#0F172A] antialiased selection:bg-blue-500/20 selection:text-blue-700">
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

@@ -16,6 +16,7 @@ import {
   Zap,
   Bot
 } from 'lucide-react';
+import { useAuth } from '@/lib/auth-context';
 
 interface HeaderProps {
   currentLocation: string;
@@ -43,13 +44,19 @@ export default function Header({
   onSelectTab,
   onOpenAuthModal,
 }: HeaderProps) {
+  const { user, logout } = useAuth();
   const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsCityDropdownOpen(false);
+      }
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -194,17 +201,138 @@ export default function Header({
             </span>
           </a>
 
-          {/* Login or Create Account Button (Exact Blue Pill from Screenshot) */}
-          <button
-            onClick={onOpenAuthModal}
-            className="flex items-center space-x-2 px-4 py-2 rounded-full bg-[#0084FF] hover:bg-[#0070db] active:scale-95 text-white font-extrabold text-xs shadow-md shadow-blue-500/30 transition-all btn-press"
-          >
-            <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-xs">
-              <User className="w-3.5 h-3.5 text-white" />
+          {/* User Profile Badge or Login Button */}
+          {user ? (
+            <div className="relative" ref={userMenuRef}>
+              <button
+                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                className="flex items-center space-x-2.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 border border-cyan-400/40 text-white transition-all shadow-md shadow-cyan-400/10 active:scale-95 group"
+                title={`${user.name} (${user.tier})`}
+              >
+                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#0084FF] to-cyan-400 flex items-center justify-center text-white text-xs font-black shadow-inner tracking-tight">
+                  {user.avatar || 'KJ'}
+                </div>
+                <div className="text-left hidden sm:block">
+                  <div className="text-[11px] font-bold text-white group-hover:text-cyan-300 leading-tight flex items-center gap-1.5">
+                    <span className="truncate max-w-[100px]">{user.name}</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                  </div>
+                  <div className="text-[9px] text-cyan-300 font-mono font-semibold leading-none">
+                    {user.tier || 'Titanium Elite'}
+                  </div>
+                </div>
+                <ChevronDown className={`w-3.5 h-3.5 text-slate-300 transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Sleek User Profile Dropdown Menu */}
+              {isUserMenuOpen && (
+                <div className="absolute right-0 mt-2 w-72 bg-[#0C152E]/95 backdrop-blur-xl border border-cyan-400/30 rounded-2xl shadow-2xl p-2.5 z-50 text-slate-100 animate-fade-in divide-y divide-white/10">
+                  {/* User Profile Header Card */}
+                  <div className="p-3 bg-white/5 rounded-xl border border-white/10 mb-2">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#0084FF] to-cyan-400 flex items-center justify-center text-white text-sm font-black shadow-md shrink-0">
+                        {user.avatar || 'KJ'}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-black text-white truncate flex items-center gap-1.5">
+                          <span>{user.name}</span>
+                          <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1 py-0.2 rounded font-mono font-bold">
+                            Active
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-cyan-300/90 font-mono truncate">{user.phone}</div>
+                        <div className="text-[9px] text-amber-300 font-mono font-bold mt-0.5">
+                          ★ {user.tier || 'Titanium Elite'} Member
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Dropdown Navigation Actions */}
+                  <div className="pt-1.5 pb-1 space-y-1 text-xs">
+                    <button
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        onSelectTab('flights');
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left hover:bg-white/10 hover:text-cyan-300 transition group"
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <span className="text-sm">🧳</span>
+                        <span className="font-semibold text-slate-200 group-hover:text-cyan-300">My Bookings</span>
+                      </div>
+                      <span className="text-[10px] font-mono bg-cyan-400/20 text-cyan-300 border border-cyan-400/30 px-2 py-0.5 rounded-full font-bold">
+                        3 active
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        onSelectTab('gst');
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left hover:bg-white/10 hover:text-cyan-300 transition group"
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <span className="w-5 h-5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center justify-center font-black text-[9px]">
+                          GST
+                        </span>
+                        <div className="text-left">
+                          <div className="font-semibold text-slate-200 group-hover:text-cyan-300 leading-tight">myBiz GST Profile</div>
+                          <div className="text-[9px] text-slate-400 font-mono leading-none">
+                            {user.mybiz_gstin || '07AAACR5055K1Z4'}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                        ✓ Verified
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left hover:bg-white/10 hover:text-cyan-300 transition group"
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <span className="text-sm">👥</span>
+                        <span className="font-semibold text-slate-200 group-hover:text-cyan-300">Saved Co-travellers</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        4 travelers
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Logout Button */}
+                  <div className="pt-1.5">
+                    <button
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        logout();
+                      }}
+                      className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-left hover:bg-red-500/20 text-rose-300 hover:text-rose-200 font-bold transition text-xs"
+                    >
+                      <span>🚪</span>
+                      <span>Logout ({user.name})</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            <span>Login or Create Account</span>
-            <ChevronDown className="w-3.5 h-3.5 text-white/80" />
-          </button>
+          ) : (
+            <button
+              onClick={onOpenAuthModal}
+              className="flex items-center space-x-2 px-4 py-2 rounded-full bg-[#0084FF] hover:bg-[#0070db] active:scale-95 text-white font-extrabold text-xs shadow-md shadow-blue-500/30 transition-all btn-press"
+            >
+              <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-xs">
+                <User className="w-3.5 h-3.5 text-white" />
+              </div>
+              <span>Login or Create Account</span>
+              <ChevronDown className="w-3.5 h-3.5 text-white/80" />
+            </button>
+          )}
 
           {/* Currency / Language */}
           <div className="hidden sm:flex items-center space-x-1 text-slate-300 text-[11px] font-semibold pl-1 border-l border-white/10">

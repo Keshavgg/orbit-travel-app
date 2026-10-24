@@ -229,3 +229,32 @@ class EventConcert(Base):
     includes_stay_combo = Column(Boolean, default=False)
     combo_price = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, index=True)
+    phone = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False, default="Keshav Jindal")
+    email = Column(String, nullable=True, default="keshav@orbit.travel")
+    account_type = Column(String, default="personal")  # 'personal' | 'mybiz'
+    tier = Column(String, default="Titanium Elite")
+    avatar = Column(String, default="KJ")
+    mybiz_gstin = Column(String, nullable=True, default="07AAACR5055K1Z4")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime, default=datetime.utcnow)
+
+    sessions = relationship("SessionToken", back_populates="user", cascade="all, delete-orphan")
+
+
+class SessionToken(Base):
+    __tablename__ = "sessions"
+
+    token = Column(String, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="sessions")
+

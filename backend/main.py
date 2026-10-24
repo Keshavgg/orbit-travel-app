@@ -6,10 +6,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from database import engine, Base, SessionLocal, get_db
-from models import Trip, Booking, DistressedFlight, Destination, Hotel, FlightTicket, EventConcert
+from models import Trip, Booking, DistressedFlight, Destination, Hotel, FlightTicket, EventConcert, User, SessionToken
 from seed import seed_database
 from seed_massive import seed_all_massive_data
-from routers import trips, flights, visas, bookings, chat, gst, callbacks, hotels, events, rag
+from routers import trips, flights, visas, bookings, chat, gst, callbacks, hotels, events, rag, auth
 
 
 @asynccontextmanager
@@ -56,6 +56,7 @@ app.add_middleware(
 )
 
 # Include Routers
+app.include_router(auth.router)
 app.include_router(hotels.router)
 app.include_router(flights.router)
 app.include_router(events.router)

@@ -150,6 +150,8 @@ class ChatRequest(BaseModel):
     vibe: Optional[str] = None
     group_type: Optional[str] = None
     budget: Optional[str] = None
+    api_key: Optional[str] = None
+    duration_hours: Optional[float] = None
 
 
 class SessionProfileSchema(BaseModel):
@@ -188,6 +190,8 @@ class ChatMessageResponse(BaseModel):
     trip_card: Optional[TripCardSchema] = None
     prompt_suggestions: Optional[List[str]] = None
     rag_ledger: Optional[RAGLedgerSchema] = None
+    thinking: Optional[str] = None
+    timeline_steps: Optional[List[Dict[str, Any]]] = None
 
 
 class ChatResponse(BaseModel):
@@ -196,6 +200,8 @@ class ChatResponse(BaseModel):
     session_profile: Optional[SessionProfileSchema] = None
     message: ChatMessageResponse
     rag_ledger: Optional[RAGLedgerSchema] = None
+    thinking: Optional[str] = None
+    engine: Optional[str] = None
 
 
 class CallbackCreateRequest(BaseModel):
@@ -318,4 +324,52 @@ class EventConcertListResponse(BaseModel):
     skip: int
     limit: int
     events: List[EventConcertResponse]
+
+
+# ── Auth Schemas ──
+class OtpSendRequest(BaseModel):
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+
+class OtpSendResponse(BaseModel):
+    success: bool
+    message: str
+    demo_otp: str
+
+
+class OtpVerifyRequest(BaseModel):
+    phone: str
+    otp: str
+    account_type: Optional[str] = "personal"
+    name: Optional[str] = None
+
+
+class UserProfile(BaseModel):
+    id: str
+    name: str
+    phone: str
+    email: Optional[str] = None
+    account_type: str = "personal"
+    tier: str = "Titanium Elite"
+    avatar: str = "KJ"
+    mybiz_gstin: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AuthResponse(BaseModel):
+    token: str
+    user: UserProfile
+
+
+class MeResponse(BaseModel):
+    user: UserProfile
+
+
+class LogoutResponse(BaseModel):
+    success: bool
+    message: str
+
 

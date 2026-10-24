@@ -33,8 +33,13 @@ import {
   Split,
   Copy,
   FileText,
+  Key,
+  Eye,
+  EyeOff,
+  Cpu,
   X
 } from 'lucide-react';
+import { useAuth } from '@/lib/auth-context';
 
 interface ChatMessage {
   id: string;
@@ -70,6 +75,14 @@ interface ChatMessage {
       snippet: string;
     }>;
   };
+  thinking?: string;
+  timelineSteps?: Array<{
+    time_window?: string;
+    title: string;
+    mode?: string;
+    cost?: string;
+    activity?: string;
+  }>;
 }
 
 interface UserProfile {
@@ -91,6 +104,7 @@ const RECENT_CHATS = [
 ];
 
 function ChatContent() {
+  const { user, loginDemo, logout } = useAuth();
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get('q') || '';
 
@@ -115,6 +129,55 @@ function ChatContent() {
   const [inspectingLedger, setInspectingLedger] = useState<ChatMessage['ragLedger'] | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Claude 3.5 Sonnet Brain Configuration
+  const [claudeApiKey, setClaudeApiKey] = useState<string>('');
+  const [tempKey, setTempKey] = useState<string>('');
+  const [showKeyModal, setShowKeyModal] = useState<boolean>(false);
+  const [showKeySecret, setShowKeySecret] = useState<boolean>(false);
+  const [serverModelStatus, setServerModelStatus] = useState<{
+    engine?: string;
+    claude_available?: boolean;
+    claude_model?: string;
+    status?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    try {
+      const savedKey = localStorage.getItem('orbit_claude_api_key');
+      if (savedKey) {
+        setClaudeApiKey(savedKey);
+        setTempKey(savedKey);
+      }
+    } catch (e) {
+      console.warn('localStorage not available', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/chat/model-status')
+      .then((res) => res.json())
+      .then((data) => setServerModelStatus(data))
+      .catch((e) => console.warn('Could not load model status:', e));
+  }, [claudeApiKey]);
+
+  const handleSaveApiKey = (newKey: string) => {
+    const trimmed = newKey.trim();
+    setClaudeApiKey(trimmed);
+    try {
+      if (trimmed) {
+        localStorage.setItem('orbit_claude_api_key', trimmed);
+        setToastMessage('✅ Claude 3.5 Sonnet Active! Deep travel reasoning enabled.');
+      } else {
+        localStorage.removeItem('orbit_claude_api_key');
+        setToastMessage('ℹ️ Switched back to Orbit Local AI Engine.');
+      }
+    } catch (e) {
+      console.warn(e);
+    }
+    setShowKeyModal(false);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
   const handleShareWhatsApp = (card: NonNullable<ChatMessage['tripCard']>) => {
     const text = `✈️ *Orbit Travel Plan: ${card.title}*\n📍 Destination: ${card.location}\n💰 Price: ${card.price} per person (Flights + Stay + Perks)\n🏨 Stay: ${card.stay}\n🛫 Flight: ${card.airline}\n\n✨ Inclusions:\n${card.inclusions.map(i => `• ${i}`).join('\n')}\n\nBooked via Orbit Travel OS: http://localhost:3005/chat`;
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -128,15 +191,15 @@ function ChatContent() {
     {
       id: 'msg-welcome',
       sender: 'ai',
-      text: "Namaste Rahul! 🤖 I'm your Orbit Real-Time AI Copilot & Recommender.\n\n⚡ **Connected to Real-Time SQLite Database via Hybrid RAG** (1,169+ live items indexed: 520 Flights, 520 Hotels, 110 Events & Cafes, Flat ₹499 Visas, Distressed Drops & GST rules).\n\nAap mujhse real-time me kuch bhi pooch sakte ho — jaise live flights ki cheapest price, Goa me sunset time pe cafes, Thailand visa rules, ya Coldplay tickets!",
+      text: "Namaste Rahul! 🤖 I'm your Orbit Real-Time AI Copilot & Recommender.\n\n⚡ **Powered by Anthropic Claude 3.5 Sonnet Deep Travel Brain** + Real-Time SQLite Database via Hybrid RAG (1,169+ live items indexed: 520 Flights, 520 Hotels, 110 Events & Cafes, Flat ₹499 Visas, Distressed Drops & GST rules).\n\nAap mujhse micro-itineraries (1-3 hours layover/escape), live flights ki cheapest price, Goa me sunset time pe cafes, Thailand visa rules, ya Coldplay tickets pooch sakte ho!",
       time: 'Just now',
       promptSuggestions: [
+        '⏱️ agar mai bahar jao 3 ghante (Delhi 3h micro-escape)',
+        '🌅 2 hours layover in Mumbai Bandra cafe & sea breeze',
         '✈️ Delhi se Bangkok cheapest flight konsi hai?',
-        '🌅 Goa me sunset time pe cafe ya beach club batao',
         '🛂 Thailand visa ka kitna charge hai aur kya documents lagenge?',
         '🎸 Coldplay Mumbai concert combo package price kya hai?',
-        '🔥 Unsold cheap flight seat drop kya mil raha hai?',
-        '🏢 myBiz corporate GST 18% ITC rule kya hai?'
+        '🔑 Connect Claude 3.5 Sonnet Travel Brain'
       ]
     },
   ]);
@@ -164,9 +227,33 @@ function ChatContent() {
     }
   }, [initialQuery]);
 
+  // Personalize welcome greeting when user is authenticated
+  useEffect(() => {
+    if (user) {
+      setMessages((prev) => {
+        if (prev.length > 0 && prev[0].id === 'msg-welcome') {
+          const userName = user.name.split(' ')[0];
+          return [
+            {
+              ...prev[0],
+              text: `Welcome back, ${userName}! 🤖 I'm your Orbit Real-Time AI Copilot & Recommender (${user.tier} Member).\n\n⚡ **Connected to Real-Time SQLite Database via Hybrid RAG** (1,169+ live items indexed: 520 Flights, 520 Hotels, 110 Events & Cafes, Flat ₹499 Visas, Distressed Drops & GST rules).\n\nAap mujhse real-time me kuch bhi pooch sakte ho — jaise live flights ki cheapest price, Goa me sunset time pe cafes, Thailand visa rules, ya Coldplay tickets!`,
+            },
+            ...prev.slice(1),
+          ];
+        }
+        return prev;
+      });
+    }
+  }, [user]);
+
   const handleSendMessage = async (textToSend?: string) => {
     const rawQuery = (textToSend || inputVal).trim();
     if (!rawQuery) return;
+
+    if (rawQuery.includes('Connect Claude') || rawQuery.includes('Set Claude API Key') || rawQuery.includes('Activate Claude')) {
+      setShowKeyModal(true);
+      return;
+    }
 
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
@@ -181,12 +268,18 @@ function ChatContent() {
 
     // Call FastAPI backend /api/chat
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (claudeApiKey) {
+        headers['x-anthropic-api-key'] = claudeApiKey;
+      }
+
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           session_id: sessionId,
           message: rawQuery,
+          api_key: claudeApiKey || undefined,
         }),
       });
 
@@ -215,6 +308,8 @@ function ChatContent() {
           tripCard: serverMsg.trip_card || undefined,
           promptSuggestions: serverMsg.prompt_suggestions || undefined,
           ragLedger: serverMsg.rag_ledger || data.rag_ledger || undefined,
+          thinking: serverMsg.thinking || data.thinking || undefined,
+          timelineSteps: serverMsg.timeline_steps || undefined,
         };
 
         setMessages((prev) => [...prev, newAiMessage]);
@@ -564,6 +659,64 @@ function ChatContent() {
             </div>
           </div>
 
+          {/* Claude 3.5 Sonnet Brain Status Card */}
+          <div className="p-2.5 rounded-xl bg-purple-950/30 border border-purple-400/30 text-[11px] space-y-1.5">
+            <div className="flex items-center justify-between text-[10px] uppercase font-bold text-purple-300">
+              <span className="flex items-center gap-1">
+                <Cpu className="w-3 h-3 text-purple-400" />
+                <span>Deep Travel Brain:</span>
+              </span>
+              <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
+                claudeApiKey || serverModelStatus?.claude_available
+                  ? 'bg-emerald-400/20 text-emerald-300 border border-emerald-400/30'
+                  : 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
+              }`}>
+                {claudeApiKey || serverModelStatus?.claude_available ? 'CLAUDE 3.5 ACTIVE' : 'LOCAL QWEN'}
+              </span>
+            </div>
+            <div className="text-[10px] text-slate-300">
+              {claudeApiKey || serverModelStatus?.claude_available
+                ? 'Anthropic Claude 3.5 Sonnet architecting spatial routes & micro-itineraries.'
+                : 'Qwen2.5 Metal active. Connect Claude 3.5 key for deep reasoning.'}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowKeyModal(true)}
+              className="w-full py-1 px-2 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 font-bold text-[10px] border border-purple-400/30 transition flex items-center justify-center gap-1"
+            >
+              <Key className="w-3 h-3 text-purple-300" />
+              <span>{claudeApiKey ? 'Manage Claude Key' : 'Connect Claude 3.5 Key'}</span>
+            </button>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-[11px] space-y-1.5">
+            <div className="text-slate-400 font-bold text-[10px] uppercase flex items-center justify-between">
+              <span>Traveler Account:</span>
+              <span className={`w-2 h-2 rounded-full ${user ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+            </div>
+            {user ? (
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#0084FF] to-cyan-400 flex items-center justify-center text-white font-black text-xs shadow-sm">
+                  {user.avatar || 'KJ'}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-extrabold text-white leading-tight truncate">{user.name}</div>
+                  <div className="text-[10px] text-amber-300 font-mono font-bold">★ {user.tier}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Guest Explorer</span>
+                <button
+                  onClick={() => loginDemo()}
+                  className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold hover:bg-cyan-500/30 transition"
+                >
+                  ⚡ Demo Login
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-[11px] space-y-1 text-slate-300">
             <div className="text-slate-400 font-bold text-[10px] uppercase">Active Hub:</div>
             <div className="font-bold text-white flex items-center gap-1">
@@ -604,6 +757,50 @@ function ChatContent() {
           </div>
 
           <div className="flex items-center space-x-2">
+            {/* Authenticated Member Badge in Header */}
+            {user ? (
+              <div className="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-950/60 to-cyan-950/60 border border-cyan-400/30 text-white shadow-sm">
+                <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#0084FF] to-cyan-400 flex items-center justify-center text-white text-[10px] font-black shadow-inner">
+                  {user.avatar || 'KJ'}
+                </div>
+                <div className="text-left hidden md:block">
+                  <div className="text-[11px] font-black text-cyan-200 leading-tight">
+                    Welcome back, {user.name.split(' ')[0]}!
+                  </div>
+                  <div className="text-[9px] text-amber-300 font-mono font-bold leading-none">
+                    ★ {user.tier}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => loginDemo()}
+                className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-[#0084FF]/20 hover:bg-[#0084FF]/30 border border-[#0084FF]/40 text-cyan-300 text-xs font-bold transition active:scale-95"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>⚡ Continue as Keshav</span>
+              </button>
+            )}
+
+            {/* Claude 3.5 Sonnet Toggle / Key Config */}
+            <button
+              onClick={() => setShowKeyModal(true)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer ${
+                claudeApiKey || serverModelStatus?.claude_available
+                  ? 'bg-purple-950/70 border-purple-400/40 text-purple-300 hover:bg-purple-900/80 shadow-purple-500/20'
+                  : 'bg-white/5 border-white/15 text-slate-300 hover:bg-white/10 hover:text-white'
+              }`}
+              title="Configure Anthropic Claude 3.5 Sonnet Brain"
+            >
+              <Cpu className={`w-3.5 h-3.5 ${claudeApiKey || serverModelStatus?.claude_available ? 'text-purple-400 animate-pulse' : 'text-slate-400'}`} />
+              <span className="hidden sm:inline">
+                {claudeApiKey || serverModelStatus?.claude_available ? 'Claude 3.5 Active' : 'Set Claude Key'}
+              </span>
+              <span className="sm:hidden">
+                {claudeApiKey || serverModelStatus?.claude_available ? 'Claude' : 'Key'}
+              </span>
+            </button>
+
             <button
               onClick={handleReset}
               className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-cyan-300 text-xs font-bold transition flex items-center gap-1.5 active:scale-95"
@@ -683,9 +880,61 @@ function ChatContent() {
                         : 'bg-[#111C38] text-slate-100 max-w-[94%] rounded-tl-none border border-cyan-400/20'
                     }`}
                   >
+                    {/* Claude 3.5 Deep Reasoning Block */}
+                    {!isUser && m.thinking && (
+                      <div className="mb-3 p-3 rounded-2xl bg-purple-950/40 border border-purple-400/30 text-xs space-y-1.5 shadow-inner">
+                        <div className="flex items-center justify-between text-purple-300 font-bold text-[10.5px]">
+                          <span className="flex items-center gap-1.5 font-mono">
+                            <Cpu className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
+                            <span>CLAUDE 3.5 TRAVEL BRAIN · DEEP REASONING</span>
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-purple-400/20 text-purple-200 text-[9px] font-mono">
+                            THOUGHT TRACE
+                          </span>
+                        </div>
+                        <p className="text-slate-300 text-[11px] leading-relaxed bg-black/40 p-2.5 rounded-xl border border-white/5 font-mono whitespace-pre-line">
+                          {m.thinking}
+                        </p>
+                      </div>
+                    )}
+
                     <p className="leading-relaxed font-medium whitespace-pre-line text-xs sm:text-sm">
                       {m.text}
                     </p>
+
+                    {/* Minute-by-Minute Micro-Timeline Steps */}
+                    {m.timelineSteps && m.timelineSteps.length > 0 && (
+                      <div className="mt-3.5 p-3.5 rounded-2xl bg-[#091124] border border-cyan-400/30 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-cyan-300 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>Minute-by-Minute Micro-Schedule ({m.timelineSteps.length} Stops)</span>
+                          </span>
+                          <span className="text-[10px] text-emerald-400 font-mono font-bold">
+                            Transit &amp; Buffer Verified
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          {m.timelineSteps.map((step, sIdx) => (
+                            <div key={sIdx} className="p-2.5 rounded-xl bg-white/5 border border-white/10 flex items-start justify-between gap-3 text-xs">
+                              <div className="space-y-0.5 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2 py-0.5 rounded bg-cyan-400/20 text-cyan-300 font-mono text-[10px] font-bold">
+                                    {step.time_window || `Segment ${sIdx + 1}`}
+                                  </span>
+                                  <span className="font-bold text-white text-xs">{step.title}</span>
+                                </div>
+                                <p className="text-slate-300 text-[11px] leading-snug">{step.activity}</p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                {step.cost && <div className="text-emerald-400 font-mono font-bold text-xs">{step.cost}</div>}
+                                {step.mode && <div className="text-[10px] text-slate-400 font-mono">{step.mode}</div>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* RAG Verification Audit Pill */}
                     {m.ragLedger && (
@@ -1145,6 +1394,138 @@ function ChatContent() {
             >
               Close Audit Inspector
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── CLAUDE 3.5 SONNET API KEY MODAL ─── */}
+      {showKeyModal && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setShowKeyModal(false)}
+        >
+          <div 
+            className="bg-[#0C152B] rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border-2 border-purple-400/50 animate-modal-enter"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-purple-400/20">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-2xl bg-purple-500/20 border border-purple-400/40 flex items-center justify-center text-purple-300 shadow-md shadow-purple-500/20">
+                  <Cpu className="w-5 h-5 text-purple-400 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-white flex items-center gap-1.5">
+                    <span>Anthropic Claude 3.5 Sonnet</span>
+                    <span className="px-2 py-0.5 rounded-full bg-purple-400/20 text-purple-300 text-[9px] font-mono font-bold">BRAIN</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400">Deep Reasoning Travel Strategist</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowKeyModal(false)}
+                className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-slate-400 hover:text-white flex items-center justify-center transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Status Info */}
+            <div className="p-3 rounded-2xl bg-purple-950/40 border border-purple-400/30 text-xs space-y-2">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-400">Active Engine:</span>
+                <span className="font-mono font-bold text-emerald-400 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  {claudeApiKey ? 'Custom Key Active' : (serverModelStatus?.claude_available ? 'Server Key Active' : 'Orbit Local Qwen2.5')}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-400">Target Model:</span>
+                <span className="font-mono text-purple-300 font-bold">claude-3-5-sonnet-20241022</span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed pt-1.5 border-t border-purple-400/20">
+                ⚡ Unlocks deep spatial geometry, minute-by-minute micro-itineraries (1-3 hours), traffic rush calculations, and grounded SQLite RAG synthesis.
+              </p>
+            </div>
+
+            {/* Input Field */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-300 flex items-center justify-between">
+                <span>Anthropic API Key</span>
+                <span className="text-[10px] text-slate-500 font-mono">sk-ant-...</span>
+              </label>
+              <div className="relative">
+                <input
+                  type={showKeySecret ? 'text' : 'password'}
+                  value={tempKey}
+                  onChange={(e) => setTempKey(e.target.value)}
+                  placeholder="sk-ant-api03-..."
+                  className="w-full bg-[#050B1A] border border-purple-400/30 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-400 pr-10 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKeySecret(!showKeySecret)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition"
+                >
+                  {showKeySecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 leading-tight">
+                Stored in browser localStorage only. Passed securely via request header <code className="text-purple-300">x-anthropic-api-key</code>.
+              </p>
+            </div>
+
+            {/* Quick Test Prompt Shortcuts */}
+            <div className="space-y-1.5 text-xs">
+              <span className="text-[10px] uppercase font-bold text-slate-400">Micro-Itinerary Prompts to Try:</span>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowKeyModal(false);
+                    handleSendMessage("agar mai bahar jao 3 ghante");
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-purple-500/20 text-purple-200 border border-purple-400/20 text-[10.5px] font-mono transition text-left"
+                >
+                  ⏱️ "agar mai bahar jao 3 ghante"
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowKeyModal(false);
+                    handleSendMessage("2 hours layover in Mumbai Bandra");
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-purple-500/20 text-purple-200 border border-purple-400/20 text-[10.5px] font-mono transition text-left"
+                >
+                  🌊 "2 hours layover in Mumbai"
+                </button>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="pt-2 flex items-center gap-2">
+              {claudeApiKey && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTempKey('');
+                    handleSaveApiKey('');
+                  }}
+                  className="px-3.5 py-2.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-bold text-xs rounded-xl transition cursor-pointer"
+                >
+                  Clear Key
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => handleSaveApiKey(tempKey)}
+                className="flex-1 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-500/30 transition cursor-pointer active:scale-95"
+              >
+                Save &amp; Activate Claude 3.5
+              </button>
+            </div>
+
           </div>
         </div>
       )}

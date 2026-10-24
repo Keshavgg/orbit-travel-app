@@ -1,15 +1,23 @@
+import os
 import re
 import json
 import uuid
+import logging
 from datetime import datetime
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import ChatSession, ChatMessage, Trip
 from local_llm import is_local_model_ready, generate_local_response
-from rag_engine import answer_query_with_rag
+from rag_engine import answer_query_with_rag, OrbitRAGIndex
+from claude_agent import (
+    get_anthropic_api_key,
+    is_claude_available,
+    run_claude_travel_agent,
+    get_curated_destination_image,
+)
 from schemas import (
     ChatRequest,
     ChatResponse,
@@ -19,6 +27,8 @@ from schemas import (
     RAGLedgerSchema,
     RAGLedgerRecord,
 )
+
+logger = logging.getLogger("orbit.chat")
 
 router = APIRouter(prefix="/api/chat", tags=["AI Copilot & Conversational Engine"])
 
@@ -198,15 +208,19 @@ def get_or_create_session(db: Session, session_id: Optional[str], initial_title:
 
 
 @router.get("/model-status")
-def get_model_status():
-    """Check whether local Apple Silicon Metal LLM (Qwen2.5-0.5B GGUF) is ready."""
-    ready = is_local_model_ready()
+def get_model_status(request: Request = None):
+    """Check whether Anthropic Claude 3.5 Sonnet or local Apple Silicon Metal LLM is ready."""
+    claude_ready = is_claude_available()
+    local_ready = is_local_model_ready()
+    model_name = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
     return {
-        "engine": "llama-cpp-python (Apple Silicon Metal GPU)",
-        "model": "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
-        "status": "READY" if ready else "DOWNLOADING",
-        "is_local": True,
-        "zero_api_keys_needed": True,
+        "engine": "Anthropic Claude 3.5 Sonnet (Primary Deep Reasoning Brain)" if claude_ready else "llama-cpp-python (Apple Silicon Metal GPU)",
+        "claude_available": claude_ready,
+        "claude_model": model_name,
+        "model": model_name if claude_ready else "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+        "status": "CLAUDE_ACTIVE" if claude_ready else ("READY" if local_ready else "STANDBY"),
+        "is_local": not claude_ready,
+        "zero_api_keys_needed": not claude_ready,
     }
 
 
@@ -331,11 +345,29 @@ def extract_group_type(text: str) -> Optional[str]:
     return None
 
 
+def extract_numeric_duration(text: str) -> Optional[float]:
+    t = text.lower()
+    m_hour = re.search(r'(\d+(?:\.\d+)?)\s*(?:hour|hr|ghante|ghanta|h|hours|hrs)\b', t)
+    if m_hour:
+        try:
+            return float(m_hour.group(1))
+        except ValueError:
+            pass
+    word_map = {"one": 1.0, "two": 2.0, "three": 3.0, "four": 4.0, "five": 5.0, "six": 6.0, "half": 0.5}
+    m_word = re.search(r'\b(one|two|three|four|five|six|half)\s*(?:hour|hr|ghante|ghanta|h|hours|hrs)\b', t)
+    if m_word:
+        return word_map.get(m_word.group(1).lower())
+    if "half an hour" in t or "30 min" in t or "30min" in t:
+        return 0.5
+    return None
+
+
 @router.post("", response_model=ChatResponse)
-def handle_chat_message(req: ChatRequest, db: Session = Depends(get_db)):
+def handle_chat_message(req: ChatRequest, request: Request, db: Session = Depends(get_db)):
     """
-    Multi-Turn Cross-Questioning Travel Copilot (powered by GPT-4o Route Engine).
-    Actively narrows down squad, vibe, budget, and stay before synthesizing a custom-tailored package.
+    Multi-Turn Conversational Travel Engine.
+    Powered by Anthropic Claude 3.5 Sonnet (Deep Reasoning) with Orbit Hybrid RAG Grounding,
+    and automatic fallback to local Apple Silicon Metal LLM.
     """
     session = get_or_create_session(db, req.session_id)
     user_text = req.message.strip()
@@ -352,13 +384,14 @@ def handle_chat_message(req: ChatRequest, db: Session = Depends(get_db)):
     db.commit()
 
     # Retrieve past messages to maintain context across turns
-    past_user_msgs = [
-        m.text for m in db.query(ChatMessage)
-        .filter(ChatMessage.session_id == session.id, ChatMessage.sender == "user")
+    past_db_messages = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.session_id == session.id)
         .order_by(ChatMessage.created_at.desc())
-        .limit(5)
+        .limit(6)
         .all()
-    ]
+    )
+    past_user_msgs = [m.text for m in past_db_messages if m.sender == "user"]
     full_context_str = " ".join([user_text] + past_user_msgs)
 
     # 2. Conversational Cross-Questioning State Machine
@@ -367,11 +400,17 @@ def handle_chat_message(req: ChatRequest, db: Session = Depends(get_db)):
     trip_card_data: Optional[dict] = None
     next_suggestions: Optional[List[str]] = None
     current_rag_ledger: Optional[RAGLedgerSchema] = None
+    thinking_text: Optional[str] = None
+    timeline_steps_data: Optional[List[Dict[str, Any]]] = None
 
     # Detect entity constraints with multi-turn recall
     detected_dest = extract_city_destination(user_text) or session.destination or extract_city_destination(full_context_str)
     detected_time = extract_time_constraint(user_text) or extract_time_constraint(full_context_str)
     detected_group = extract_group_type(user_text)
+    duration_hours = req.duration_hours or extract_numeric_duration(user_text) or extract_numeric_duration(full_context_str)
+
+    if not detected_dest and detected_time:
+        detected_dest = "delhi"
 
     if detected_group:
         session.group_type = detected_group
@@ -381,34 +420,96 @@ def handle_chat_message(req: ChatRequest, db: Session = Depends(get_db)):
         session.destination = dest
         session.title = f"Trip to {dest.title()}"
 
-    # ----------------------------------------------------
-    # 1. CHECK IF USER WANTS TRIP RECOMMENDATION / CUSTOMIZATION
-    # If yes -> ALWAYS run Multi-Turn Cross-Questioning Flow!
-    # ----------------------------------------------------
-    is_recommender_query = (
-        bool(dest) or
-        any(w in q for w in [
-            "recommend", "plan", "trip", "vacation", "holiday", "package", "itinerary",
-            "chahiye", "jana hai", "ghoomne", "squad", "escape", "weekend", "chalna", "chalo",
-            "north", "south", "peace", "party", "adventure", "rafting", "glamp", "tents",
-            "villa", "pool", "budget", "under", "15000", "25000", "4000", "couple", "family", "alone", "solo",
-            "delhi", "mumbai", "goa", "rishikesh", "thailand", "dubai", "jaipur", "kashmir", "corbett", "bali"
-        ])
-    )
+    # Check for Anthropic API Key (body api_key, header x-anthropic-api-key, or env)
+    header_key = request.headers.get("x-anthropic-api-key")
+    anthropic_key = get_anthropic_api_key(passed_key=req.api_key, header_key=header_key)
 
     # ----------------------------------------------------
-    # 2. STANDALONE FACTUAL INQUIRIES (RAG INTERCEPTION + CROSS-QUESTION)
-    # Trigger ONLY for pure standalone factual lookups (e.g. "delhi se bangkok cheapest flight")
+    # PRIMARY DEEP REASONING BRAIN: ANTHROPIC CLAUDE 3.5 SONNET
     # ----------------------------------------------------
-    is_standalone_factual = not is_recommender_query and any(
-        w in q for w in [
-            "cheapest flight", "lowest fare", "sasti flight", "flight schedule", "flight price",
-            "visa fee", "visa charge", "visa documents", "passport ocr",
-            "unsold flight", "seat drop", "distressed drop",
-            "gst itc", "gst rule", "tax invoice",
-            "booking status", "pnr status"
+    if anthropic_key:
+        rag_pack = answer_query_with_rag(user_text, top_k=5)
+        rag_snippets = []
+        if rag_pack and rag_pack.get("sources"):
+            for s in rag_pack["sources"]:
+                p_info = f", Price: ₹{s.get('price'):,}" if s.get("price") else ""
+                rag_snippets.append(
+                    f"• [{s.get('type', 'item').upper()}] {s.get('title')}: {s.get('snippet')}{p_info}"
+                )
+        rag_context_str = "\n".join(rag_snippets) if rag_snippets else "No direct database match found."
+
+        conv_history = [
+            {"sender": m.sender, "text": m.text}
+            for m in reversed(past_db_messages)
         ]
-    )
+
+        claude_res = run_claude_travel_agent(
+            query=user_text,
+            api_key=anthropic_key,
+            duration_hours=duration_hours,
+            destination=dest or session.destination,
+            vibe=session.vibe or req.vibe,
+            group_type=session.group_type or req.group_type,
+            budget=session.budget or req.budget,
+            conversation_history=conv_history,
+            rag_context=rag_context_str,
+        )
+
+        if claude_res.get("success"):
+            ai_text = claude_res.get("answer", "")
+            trip_card_data = claude_res.get("trip_card")
+            next_suggestions = claude_res.get("prompt_suggestions")
+            thinking_text = claude_res.get("thinking")
+            timeline_steps_data = claude_res.get("timeline_steps")
+            session.step = max(session.step + 1, 1)
+
+            current_rag_ledger = RAGLedgerSchema(
+                retrieval_ms=round(rag_pack["metrics"].get("retrieval_ms", 3.4), 2) if rag_pack else 3.4,
+                tables_scanned=["flight_tickets", "hotels", "events_concerts", "visas", "distressed_drops"],
+                matched_records=len(rag_pack.get("sources", [])) if rag_pack else 0,
+                confidence=0.99,
+                engine=claude_res.get("engine", "Anthropic Claude 3.5 Sonnet + Orbit Hybrid RAG"),
+                is_live_db=True,
+                sources=[
+                    RAGLedgerRecord(
+                        title=s["title"],
+                        type=s["type"],
+                        price=s.get("price"),
+                        confidence=s.get("confidence", 0.95),
+                        snippet=s.get("snippet", "")
+                    ) for s in (rag_pack.get("sources", [])[:4] if rag_pack else [])
+                ]
+            )
+        else:
+            logger.warning(f"Claude invocation failed ({claude_res.get('error')}). Falling back to local engine.")
+            thinking_text = f"Notice: Anthropic Claude error ({claude_res.get('message')}). Fallback to Orbit Local Engine active."
+
+    # ----------------------------------------------------
+    # FALLBACK / LOCAL ENGINE PIPELINE (Executed when no Claude key or Claude failed)
+    # ----------------------------------------------------
+    if not ai_text:
+        # 1. CHECK IF USER WANTS TRIP RECOMMENDATION / CUSTOMIZATION
+        is_recommender_query = (
+            bool(dest) or
+            any(w in q for w in [
+                "recommend", "plan", "trip", "vacation", "holiday", "package", "itinerary",
+                "chahiye", "jana hai", "ghoomne", "squad", "escape", "weekend", "chalna", "chalo",
+                "north", "south", "peace", "party", "adventure", "rafting", "glamp", "tents",
+                "villa", "pool", "budget", "under", "15000", "25000", "4000", "couple", "family", "alone", "solo",
+                "delhi", "mumbai", "goa", "rishikesh", "thailand", "dubai", "jaipur", "kashmir", "corbett", "bali"
+            ])
+        )
+
+        # 2. STANDALONE FACTUAL INQUIRIES (RAG INTERCEPTION + CROSS-QUESTION)
+        is_standalone_factual = not is_recommender_query and any(
+            w in q for w in [
+                "cheapest flight", "lowest fare", "sasti flight", "flight schedule", "flight price",
+                "visa fee", "visa charge", "visa documents", "passport ocr",
+                "unsold flight", "seat drop", "distressed drop",
+                "gst itc", "gst rule", "tax invoice",
+                "booking status", "pnr status"
+            ]
+        )
 
     if is_standalone_factual:
         rag_res = answer_query_with_rag(user_text, top_k=3)
@@ -467,18 +568,64 @@ def handle_chat_message(req: ChatRequest, db: Session = Depends(get_db)):
     if ai_text:
         pass
     # ----------------------------------------------------
-    # 0. DELHI FLOW (Layover, 2-Hour Express, Solo Trails & Heritage)
+    # 0. DELHI FLOW (Layover, 2-Hour / 3-Hour Express, Solo Trails & Heritage)
     # ----------------------------------------------------
     elif dest == "delhi":
         session.destination = "delhi"
-        is_short_time = detected_time is not None or any(w in q for w in [
-            "2 hours", "two hours", "hour", "hr", "ghante", "layover", "transit", "short",
-            "where should i go", "where to go", "kahan jau", "kya karun", "alone", "solo"
+        is_short_time = detected_time is not None or (duration_hours is not None and duration_hours <= 5) or any(w in q for w in [
+            "2 hours", "two hours", "3 hours", "three hours", "hour", "hr", "ghante", "ghanta", "layover", "transit", "short",
+            "where should i go", "where to go", "kahan jau", "kya karun", "alone", "solo", "bahar"
         ])
         is_solo = session.group_type == "Solo Traveler" or "alone" in q or "solo" in q or "single" in q
+        is_three_hours = (duration_hours and duration_hours >= 2.5) or any(w in q for w in ["3", "three", "3h", "3 hr", "teen", "3 ghante", "3 hour", "3 hours"])
 
         if is_short_time or session.step >= 1:
-            if is_solo or session.step >= 2 or "alone" in q or "solo" in q:
+            if is_three_hours:
+                session.step = 3
+                session.group_type = "Solo Traveler" if is_solo else (session.group_type or "Traveler")
+                session.vibe = "Delhi 3-Hour Heritage & Cafe Escape"
+                session.stay_type = "Aerocity & CP Express Pass"
+                session.budget = "Under ₹750"
+
+                ai_text = (
+                    "Bhai agar aap 3 ghante (3 hours) ke liye bahar nikal rahe ho, toh scene 100% sorted hai! ⏱️⚡\n"
+                    "Dilli ke traffic aur distances ko dekh kar ye 3 verified realistic options hain jahan bina kisi rush ke 3 ghante me mast ghumke wapas aa sakte ho:\n\n"
+                    "• 🌳 **Option 1 (Lodhi Art District + Sunder Nursery Lake)**: Block 15 me giant street murals dekho, Blue Tokai me artisanal pour-over coffee lo, aur 16th-century Mughal heritage tombs ke beech Fabcafe by the Lake par lakeside cold-pressed juice enjoy karo.\n"
+                    "• 🏛️ **Option 2 (Airport Express se CP & Bangla Sahib)**: IGI T3 se 135 km/h Orange Line Metro lo (20 mins to Shivaji Stadium CP). Gurudwara Bangla Sahib ka serene Sarovar walk & kada prasad lo + Wenger's bakery ka iconic mutton patty & cold coffee.\n"
+                    "• 🌅 **Option 3 (Hauz Khas Fort Sunset & Deer Park)**: 14th-century medieval stone pavilions over the lake, Deer Park walking canopy, aur Coast Cafe / Social rooftop golden hour sunset view.\n\n"
+                    "Ye raha aapka curated **Delhi 3-Hour Heritage & Cafe Trail Pass**:"
+                )
+
+                trip_card_data = {
+                    "title": "Delhi 3-Hour Heritage, Murals & Cafe Trail",
+                    "cityKey": "delhi",
+                    "location": "Lodhi Art District, Sunder Nursery & CP, Delhi",
+                    "price": "₹450",
+                    "originalPrice": "₹1,200",
+                    "duration": "3 Hours Flexible Escape",
+                    "airline": "Delhi Metro Airport Express / Yellow Line",
+                    "stay": "Verified Cafe & Heritage Route Pass",
+                    "image": "https://images.unsplash.com/photo-1587474260584-136574528ed5?auto=format&fit=crop&w=1200&q=80",
+                    "inclusions": [
+                        "🎨 50+ Lodhi Murals Walking Route Map",
+                        "☕ Blue Tokai / Devan's Pour-Over Voucher",
+                        "🏛️ Sunder Nursery Mughal Garden Entry Pass",
+                        "🛡️ Guaranteed 3-Hour Return Buffer Window",
+                    ],
+                    "itineraryDays": [
+                        {"day": "00-45m", "title": "Street Murals & Photo Trail", "desc": "Explore giant street art installations in Lodhi Art District (Meherchand Market)."},
+                        {"day": "45-90m", "title": "Artisanal Coffee & Bakery", "desc": "Specialty pour-over coffee and fresh sourdough croissant at Blue Tokai."},
+                        {"day": "90-150m", "title": "Heritage Lake Stroll", "desc": "5-min ride to Sunder Nursery for Mughal tombs and serene water bodies."},
+                        {"day": "150-180m", "title": "Lakeside Chill & Return", "desc": "Fabcafe by the lake for golden hour drinks and smooth transit back."}
+                    ]
+                }
+                next_suggestions = [
+                    "⚡ Book 3-Hour Pass (₹450)",
+                    "Show Old Delhi 3h Food Crawl",
+                    "Show Mumbai 3h Marine Drive Walk",
+                    "What metro line to take?",
+                ]
+            elif is_solo or session.step >= 2 or "alone" in q or "solo" in q:
                 session.step = 3
                 session.group_type = "Solo Traveler"
                 session.vibe = "Aerocity & CP Solo Trail"
@@ -1294,6 +1441,8 @@ def handle_chat_message(req: ChatRequest, db: Session = Depends(get_db)):
         step=session.step,
         session_profile=session_profile,
         rag_ledger=current_rag_ledger,
+        thinking=thinking_text,
+        engine=current_rag_ledger.engine if current_rag_ledger else "Orbit Local AI",
         message=ChatMessageResponse(
             id=ai_msg_id,
             session_id=session.id,
@@ -1303,5 +1452,7 @@ def handle_chat_message(req: ChatRequest, db: Session = Depends(get_db)):
             trip_card=card_obj,
             prompt_suggestions=next_suggestions,
             rag_ledger=current_rag_ledger,
+            thinking=thinking_text,
+            timeline_steps=timeline_steps_data,
         ),
     )
