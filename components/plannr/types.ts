@@ -49,6 +49,7 @@ export interface PlannrTripMember {
   share_amount: number;
   has_paid: boolean;
   is_reminded?: boolean;
+  is_current_user?: boolean;
 }
 
 export interface PlannrPollOption {

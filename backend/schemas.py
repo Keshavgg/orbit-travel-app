@@ -530,6 +530,10 @@ class PlannrGenerateRequest(BaseModel):
     prompt: str
     style: Optional[str] = "Balanced"
     interests: Optional[List[str]] = None
+    destination: Optional[str] = None
+    budget_per_person: Optional[int] = None
+    travellers: Optional[str] = None
+    api_key: Optional[str] = None
 
 
 class PlannrReelScanRequest(BaseModel):

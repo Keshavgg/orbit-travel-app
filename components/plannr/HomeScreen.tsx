@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Sparkles, Mic, Bell, Heart, Users, Film, Check, Compass } from 'lucide-react';
+import { Sparkles, Mic, Bell, Heart, Users, Film, Check, Compass, ArrowRight, Loader2 } from 'lucide-react';
 import { PlannrScreen, PlannrPackage } from './types';
 import {
   BaliVectorArt,
@@ -273,6 +273,14 @@ const VIBE_FILTERS = [
   { id: 'luxury', label: '💎 Luxury & Dunes' },
 ];
 
+const QUICK_PROMPTS = [
+  { icon: '⚡', label: '3-Hour Delhi Layover', prompt: 'agar mai bhar jao 3 ghata Delhi airport layover' },
+  { icon: '🏖️', label: 'Goa Villa with Friends', prompt: 'Goa party villa with 4 friends under 15k' },
+  { icon: '⛰️', label: 'Rishikesh Rafting Weekend', prompt: 'Rishikesh rafting weekend under 5k' },
+  { icon: '🛶', label: 'Kashmir Dal Lake & Snow', prompt: 'Kashmir Dal Lake and Gulmarg snow trip' },
+  { icon: '🏜️', label: 'Dubai Desert & Yacht', prompt: 'Dubai desert safari and Marina yacht under 35k' },
+];
+
 export const HomeScreen: React.FC<HomeScreenProps> = ({
   onNavigate,
 }) => {
@@ -281,6 +289,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [packages, setPackages] = useState<PlannrPackage[]>(COMBINED_RECOMMENDER_PACKAGES);
   const [favorites, setFavorites] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isGeneratingPlan, setIsGeneratingPlan] = useState<boolean>(false);
+  const [generatingPrompt, setGeneratingPrompt] = useState<string>('');
 
   // Initial load: sync any additional custom backend packages
   useEffect(() => {
@@ -332,9 +342,43 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     setFavorites((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const handleGeneratePlan = async (promptToUse?: string) => {
+    const query = (promptToUse || searchQuery).trim();
+    if (!query) {
+      onNavigate('plan-ai');
+      return;
+    }
+
+    setGeneratingPrompt(query);
+    setIsGeneratingPlan(true);
+    try {
+      const res = await fetch('/api/plannr/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: query,
+          style: 'Curated',
+        }),
+      });
+
+      if (res.ok) {
+        const tripData = await res.json();
+        onNavigate('itinerary', { trip: tripData });
+        return;
+      }
+    } catch (err) {
+      console.warn('Backend generation failed, opening Plan with AI screen:', err);
+    } finally {
+      setIsGeneratingPlan(false);
+    }
+
+    // Fallback: navigate to plan-ai with prompt preloaded
+    onNavigate('plan-ai', { initialIdea: query });
+  };
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onNavigate('plan-ai', { initialIdea: searchQuery });
+    handleGeneratePlan();
   };
 
   const renderVectorIllustration = (type?: string, title?: string, image?: string) => {
@@ -410,33 +454,76 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
       {/* Main Content Container */}
       <main className="px-5 space-y-5">
-        {/* Search Bar */}
-        <form onSubmit={handleSearchSubmit} className="relative">
-          <div
-            onClick={() => onNavigate('plan-ai')}
-            className="w-full bg-white rounded-2xl sm:rounded-full border border-[#EDE7DF] px-4 py-3.5 flex items-center gap-3 shadow-sm cursor-pointer hover:border-[#D95338]/40 transition-colors"
-          >
-            <Sparkles className="w-5 h-5 text-[#D95338] flex-shrink-0" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tell Plannr your trip idea (mood, budget, group)..."
-              className="w-full bg-transparent text-sm text-[#151E28] placeholder-[#7A8699] font-medium focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onNavigate('plan-ai');
-              }}
-              className="p-1 rounded-full text-[#151E28] hover:bg-[#F2EDE4] transition-colors"
-              aria-label="Voice Search"
-            >
-              <Mic className="w-5 h-5" />
-            </button>
+        {/* Search Bar & AI Generator */}
+        <div className="space-y-2.5">
+          <form onSubmit={handleSearchSubmit} className="relative">
+            <div className="w-full bg-white rounded-2xl sm:rounded-full border border-[#EDE7DF] px-4 py-3 flex items-center gap-2.5 shadow-sm focus-within:border-[#D95338] transition-colors">
+              <Sparkles className="w-5 h-5 text-[#D95338] flex-shrink-0" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Tell Plannr your idea (e.g. 3 ghanta bahar jao, Goa party villa)..."
+                className="w-full bg-transparent text-sm text-[#151E28] placeholder-[#7A8699] font-medium focus:outline-none"
+              />
+              {searchQuery.trim() ? (
+                <button
+                  type="submit"
+                  disabled={isGeneratingPlan}
+                  className="px-3 py-1.5 bg-[#D95338] hover:bg-[#C2452B] active:scale-95 text-white text-xs font-bold rounded-full flex items-center gap-1 transition-all flex-shrink-0 shadow-xs"
+                >
+                  {isGeneratingPlan ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      <span>Plan</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onNavigate('plan-ai')}
+                  className="p-1 rounded-full text-[#151E28] hover:bg-[#F2EDE4] transition-colors"
+                  aria-label="Voice Search"
+                >
+                  <Mic className="w-5 h-5 text-[#7A8699]" />
+                </button>
+              )}
+            </div>
+          </form>
+
+          {/* Quick Idea Chips */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-0.5">
+            {QUICK_PROMPTS.map((qp, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => {
+                  setSearchQuery(qp.prompt);
+                  handleGeneratePlan(qp.prompt);
+                }}
+                disabled={isGeneratingPlan}
+                className="whitespace-nowrap px-2.5 py-1.5 bg-white border border-[#EDE7DF] hover:border-[#D95338]/40 hover:bg-[#FFF8F6] active:scale-95 text-[11px] font-semibold text-[#485363] rounded-full flex items-center gap-1.5 shadow-2xs transition-all flex-shrink-0"
+              >
+                <span>{qp.icon}</span>
+                <span>{qp.label}</span>
+              </button>
+            ))}
           </div>
-        </form>
+
+          {/* Generating Loading State Banner */}
+          {isGeneratingPlan && (
+            <div className="bg-[#FFF4F0] border border-[#FADCD3] rounded-xl p-3 flex items-center gap-3 animate-pulse">
+              <Loader2 className="w-5 h-5 text-[#D95338] animate-spin flex-shrink-0" />
+              <div className="text-xs">
+                <p className="font-bold text-[#D95338]">Orbit AI Planning Trip...</p>
+                <p className="text-[#7A8699] line-clamp-1">{generatingPrompt || 'Calculating transit, scenic spots & prices'}</p>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* 3 Quick Action Pills in a Row */}
         <div className="grid grid-cols-3 gap-2.5">

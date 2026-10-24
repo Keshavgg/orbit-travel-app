@@ -5,8 +5,22 @@ import re
 import random
 from datetime import datetime, timedelta
 from typing import List, Optional, Any, Dict
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Header
 from sqlalchemy.orm import Session
+import logging
+
+logger = logging.getLogger("orbit.plannr")
+
+try:
+    from claude_agent import (
+        run_claude_travel_agent,
+        is_claude_available,
+        get_anthropic_api_key,
+    )
+except Exception:
+    run_claude_travel_agent = None
+    is_claude_available = lambda *args, **kwargs: False
+    get_anthropic_api_key = lambda *args, **kwargs: None
 
 from database import get_db
 from models import (
@@ -260,45 +274,146 @@ def get_packages(
 # 2. Trip Generation via NLP Prompt
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _parse_trip_entities(prompt: str, style: Optional[str] = None):
-    """Extract destination, days, travelers, budget, and special keywords from natural language prompt."""
+def _parse_trip_entities(
+    prompt: str,
+    style: Optional[str] = None,
+    destination_hint: Optional[str] = None,
+    budget_hint: Optional[int] = None,
+    travellers_hint: Optional[str] = None,
+):
+    """Extract destination, days, travelers, budget, micro-hours and special keywords from natural language prompt."""
     prompt_lower = prompt.lower()
 
-    # Destination detection
+    # 1. Micro-trip / transit hours detection (e.g. "agar mai bahar jao 3 ghante", "3 hours in Delhi", "2 hr layover")
+    is_micro_trip = False
+    micro_hours = 3
+    hours_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:ghanta|ghante|hours?|hrs?)\b", prompt_lower)
+    if hours_match:
+        is_micro_trip = True
+        try:
+            micro_hours = int(float(hours_match.group(1)))
+        except Exception:
+            micro_hours = 3
+    elif any(k in prompt_lower for k in ["bahar jao", "bhar jao", "micro", "layover", "transit", "short escape", "quick escape", "layover escape"]):
+        is_micro_trip = True
+        micro_hours = 3
+
+    # 2. Comprehensive Destination Detection
     destinations_map = {
-        "bali": "Bali",
-        "vietnam": "Vietnam",
+        "delhi": "Delhi",
+        "ncr": "Delhi",
+        "aerocity": "Delhi",
+        "connaught": "Delhi",
+        "bangla sahib": "Delhi",
+        "gurgaon": "Delhi",
+        "gurugram": "Delhi",
+        "noida": "Delhi",
+        "mumbai": "Mumbai",
+        "bandra": "Mumbai",
+        "bombay": "Mumbai",
+        "bangalore": "Bangalore",
+        "bengaluru": "Bangalore",
+        "koramangala": "Bangalore",
+        "indiranagar": "Bangalore",
+        "goa": "Goa",
+        "vagator": "Goa",
+        "anjuna": "Goa",
+        "calangute": "Goa",
+        "palolem": "Goa",
+        "rishikesh": "Rishikesh",
+        "haridwar": "Rishikesh",
+        "tapovan": "Rishikesh",
+        "kashmir": "Kashmir",
+        "srinagar": "Kashmir",
+        "gulmarg": "Kashmir",
+        "pahalgam": "Kashmir",
+        "jaipur": "Jaipur",
+        "samode": "Jaipur",
+        "rajasthan": "Jaipur",
+        "udaipur": "Udaipur",
+        "manali": "Manali",
+        "kasol": "Manali",
+        "himachal": "Manali",
+        "ladakh": "Ladakh",
+        "leh": "Ladakh",
+        "amritsar": "Amritsar",
+        "agra": "Agra",
+        "kerala": "Kerala",
+        "munnar": "Kerala",
+        "dubai": "Dubai",
+        "abu dhabi": "Dubai",
         "thailand": "Thailand",
         "phuket": "Thailand",
+        "bangkok": "Thailand",
+        "krabi": "Thailand",
+        "vietnam": "Vietnam",
+        "hanoi": "Vietnam",
+        "da nang": "Vietnam",
+        "bali": "Bali",
+        "ubud": "Bali",
+        "canggu": "Bali",
         "japan": "Japan",
         "tokyo": "Japan",
         "kyoto": "Japan",
-        "dubai": "Dubai",
-        "goa": "Goa",
         "singapore": "Singapore",
         "paris": "Paris",
+        "london": "London",
         "maldives": "Maldives",
     }
-    detected_dest = "Bali"
-    for k, v in destinations_map.items():
-        if k in prompt_lower:
-            detected_dest = v
-            break
 
-    # Days detection
-    detected_days = 7
-    if "week" in prompt_lower:
-        detected_days = 7
-    days_match = re.search(r"(\d+)\s*(?:days?|nights?)", prompt_lower)
-    if days_match:
-        detected_days = int(days_match.group(1))
-        if "night" in days_match.group(0) and detected_days < 14:
-            detected_days += 1
-    detected_days = max(1, min(detected_days, 14))
+    detected_dest = None
+    if destination_hint and destination_hint.strip() and destination_hint.lower() not in ["bali", "destination"]:
+        detected_dest = destination_hint.strip()
 
-    # Travelers detection: "3 friends" -> 4 people
+    if not detected_dest:
+        for k, v in destinations_map.items():
+            if k in prompt_lower:
+                detected_dest = v
+                break
+
+    if not detected_dest:
+        # Check regex for "in <City>" or "to <City>" or "for <City>"
+        city_match = re.search(r"\b(?:in|to|for|at|visit|explore)\s+([A-Z][a-zA-Z]+)", prompt)
+        if city_match:
+            candidate = city_match.group(1)
+            if candidate.lower() not in ["days", "hours", "friends", "the", "a", "an", "under", "with"]:
+                detected_dest = candidate
+
+    if not detected_dest:
+        if is_micro_trip:
+            detected_dest = "Delhi"
+        elif "beach" in prompt_lower or "party" in prompt_lower:
+            detected_dest = "Goa"
+        elif "rafting" in prompt_lower or "glamping" in prompt_lower:
+            detected_dest = "Rishikesh"
+        elif "snow" in prompt_lower or "houseboat" in prompt_lower:
+            detected_dest = "Kashmir"
+        else:
+            detected_dest = "Goa"
+
+    # 3. Days Detection
+    if is_micro_trip:
+        detected_days = 1
+    else:
+        detected_days = 4
+        if "weekend" in prompt_lower:
+            detected_days = 2
+        elif "week" in prompt_lower:
+            detected_days = 7
+        days_match = re.search(r"(\d+)\s*(?:days?|nights?)", prompt_lower)
+        if days_match:
+            detected_days = int(days_match.group(1))
+            if "night" in days_match.group(0) and detected_days < 14:
+                detected_days += 1
+        detected_days = max(1, min(detected_days, 14))
+
+    # 4. Travelers Detection
     detected_travelers = 4
-    friends_match = re.search(r"(\d+)\s*(?:friends?|pax|mates|buddies)", prompt_lower)
+    if travellers_hint:
+        trav_num = re.search(r"(\d+)", travellers_hint)
+        if trav_num:
+            detected_travelers = int(trav_num.group(1))
+    friends_match = re.search(r"(\d+)\s*(?:friends?|pax|mates|buddies|people)", prompt_lower)
     if friends_match:
         detected_travelers = int(friends_match.group(1)) + 1
     elif "solo" in prompt_lower or "myself" in prompt_lower or "alone" in prompt_lower:
@@ -306,37 +421,65 @@ def _parse_trip_entities(prompt: str, style: Optional[str] = None):
     elif "couple" in prompt_lower or "partner" in prompt_lower or "with my wife" in prompt_lower or "with my husband" in prompt_lower:
         detected_travelers = 2
 
-    # Budget per person
-    budget_per_person = 55000
-    k_match = re.search(r"(?:under|around|budget of|max|within)?\s*([0-9]{1,3})\s*k\b", prompt_lower)
-    if k_match:
-        budget_per_person = int(k_match.group(1)) * 1000
-    else:
-        num_match = re.search(r"(?:under|around|budget of|max|within|₹|rs\.?)\s*([0-9]{2,3}(?:,[0-9]{3})|[0-9]{5,6})", prompt_lower)
+    # 5. Budget Detection
+    if budget_hint and budget_hint > 0:
+        budget_per_person = budget_hint
+    elif is_micro_trip:
+        budget_per_person = 499
+        num_match = re.search(r"(?:under|around|budget of|max|within|₹|rs\.?)\s*([0-9]{2,5})", prompt_lower)
         if num_match:
-            clean_str = num_match.group(1).replace(",", "")
-            budget_per_person = int(clean_str)
+            budget_per_person = int(num_match.group(1))
+    else:
+        k_match = re.search(r"(?:under|around|budget of|max|within)?\s*([0-9]{1,3})\s*k\b", prompt_lower)
+        if k_match:
+            budget_per_person = int(k_match.group(1)) * 1000
+        else:
+            num_match = re.search(r"(?:under|around|budget of|max|within|₹|rs\.?)\s*([0-9]{2,3}(?:,[0-9]{3})|[0-9]{4,6})", prompt_lower)
+            if num_match:
+                clean_str = num_match.group(1).replace(",", "")
+                budget_per_person = int(clean_str)
+            else:
+                default_budgets = {
+                    "Rishikesh": 4999,
+                    "Jaipur": 8999,
+                    "Goa": 12500,
+                    "Kashmir": 21999,
+                    "Thailand": 25000,
+                    "Dubai": 32000,
+                    "Vietnam": 45000,
+                    "Bali": 52000,
+                    "Japan": 95000,
+                }
+                budget_per_person = default_budgets.get(detected_dest, 15000)
 
     total_budget = budget_per_person * detected_travelers
 
-    # Dates
-    start_dt = datetime.now() + timedelta(days=20)
-    end_dt = start_dt + timedelta(days=detected_days - 1)
-    start_str = start_dt.strftime("%d %b")
-    end_str = end_dt.strftime("%d %b")
+    # 6. Dates Formatting
+    if is_micro_trip:
+        start_str = "Today"
+        end_str = "Today"
+    else:
+        start_dt = datetime.now() + timedelta(days=15)
+        end_dt = start_dt + timedelta(days=detected_days - 1)
+        start_str = start_dt.strftime("%d %b")
+        end_str = end_dt.strftime("%d %b")
 
-    # Title
-    vibe_words = ["Relaxed", "Adventure", "Chill", "Ultimate", "Boys", "Girls", "Heritage"]
+    # 7. Title Construction
     selected_vibe = style if style and style != "Balanced" else "Curated"
-    title = f"{detected_dest} {selected_vibe} Escape"
-    if "friends" in prompt_lower:
+    if is_micro_trip:
+        title = f"{detected_dest} {micro_hours}-Hour Micro-Escape"
+    elif "friends" in prompt_lower:
         title = f"{detected_dest} with Friends"
     elif "boys" in prompt_lower:
         title = f"{detected_dest} with the boys"
+    else:
+        title = f"{detected_dest} {selected_vibe} Escape"
 
     return {
         "destination": detected_dest,
         "total_days": detected_days,
+        "is_micro_trip": is_micro_trip,
+        "micro_hours": micro_hours,
         "travelers_count": detected_travelers,
         "budget_per_person": budget_per_person,
         "total_budget": total_budget,
@@ -346,137 +489,261 @@ def _parse_trip_entities(prompt: str, style: Optional[str] = None):
     }
 
 
-def _generate_curated_days_and_stops(destination: str, total_days: int, prompt: str):
-    """Generate realistic days and stops tailored to destination and prompt keywords."""
+def _generate_curated_days_and_stops(destination: str, total_days: int, prompt: str, is_micro_trip: bool = False, micro_hours: int = 3):
+    """Generate realistic days and stops tailored to destination, time bounds, and prompt keywords."""
     prompt_l = prompt.lower()
-    has_volcano = "volcano" in prompt_l or "hike" in prompt_l or "trek" in prompt_l
-    has_beach = "beach" in prompt_l or "surf" in prompt_l or "snork" in prompt_l
-    has_cafe = "caf" in prompt_l or "brunch" in prompt_l or "coffee" in prompt_l
 
-    # Destination catalogs
+    # ── SPECIAL CASE: 1-3 Hour Micro-Trips / Transit Layover ──
+    if is_micro_trip:
+        if destination == "Mumbai":
+            stops = [
+                ("00:00", "Bandra-Worli Sea Link Cab", "Express coastal sea-link drive · 25 mins", "Activity", 240, True, "CAB-MUM-01"),
+                ("00:30", "Bandstand & Castella Fort", "Arabian sea panoramic view & sea breeze · 45 mins", "Walk", 0, False, None),
+                ("01:20", "Subko Specialty Coffee & Craftery", "Sourdough toast & artisanal iced pour-over · 45 mins", "Food", 380, False, None),
+                ("02:10", "Fast Return Cab with Flight Buffer", "Guaranteed arrival with 50 min terminal clearance", "Activity", 240, True, "CAB-MUM-02"),
+            ]
+        elif destination == "Bangalore":
+            stops = [
+                ("00:00", "Purple Line Namma Metro / Cab", "Fast-track bypass to Indiranagar 12th Main · 25 mins", "Activity", 150, True, "BLR-MET-01"),
+                ("00:30", "Third Wave Roasters / Glen's Bakehouse", "Cold brew coffee & signature red velvet slice · 45 mins", "Food", 320, False, None),
+                ("01:20", "Defence Colony Canopy Walk & Boutiques", "Shaded boulevard stroll & bookshops · 45 mins", "Walk", 0, False, None),
+                ("02:10", "Stress-Free Express Return", "Guaranteed terminal arrival with safety buffer", "Activity", 150, True, "BLR-MET-02"),
+            ]
+        else: # Default Delhi NCR Micro-Trip (Bangla Sahib + Wenger's + Airport Express)
+            stops = [
+                ("00:00", "Airport Express Orange Metro Line", "High-speed 135 km/h train from T3 to Shivaji Stadium · 20 mins", "Activity", 60, True, "DMRC-OR-01"),
+                ("00:30", "Gurudwara Bangla Sahib Sarovar", "Peaceful marble parikrama, golden dome & holy sarovar · 45 mins", "Culture", 0, False, None),
+                ("01:25", "Wenger's Deli & Blue Tokai Coffee", "Famous Delhi mutton patty & artisanal nitro cold brew · 45 mins", "Food", 350, False, None),
+                ("02:15", "Airport Express Return & Buffer", "Express return train to T3 with 45 mins security clearance buffer", "Activity", 60, True, "DMRC-OR-02"),
+            ]
+
+        return [{
+            "day_number": 1,
+            "day_title": f"{destination} {micro_hours}-Hour Micro-Escape",
+            "summary": f"High-precision {micro_hours}-hour micro-itinerary designed with 0-stress transit timing, iconic cultural anchor, artisanal coffee, and guaranteed return buffer.",
+            "stops": stops,
+        }]
+
+    # ── MULTI-DAY CATALOGS FOR TOP DESTINATIONS ──
     catalog = {
+        "Delhi": [
+            ("Old Delhi Heritage & Culinary Soul", [
+                ("09:00", "Jama Masjid & Chandni Chowk", "Historic Mughal mosque & electric cycle rickshaw · 2 hrs", "Culture", 200, True, "PLN-DEL-101"),
+                ("11:30", "Karim's Historic Kebab Feast", "Mutton seekh, burra & roomali roti · 1.5 hrs", "Food", 850, False, None),
+                ("14:00", "Red Fort (Lal Qila) Walk", "UNESCO World Heritage fortress walk · 2 hrs", "Culture", 500, True, "PLN-DEL-102"),
+                ("17:30", "Connaught Place & Wenger's Deli", "Colonial Georgian colonnades & artisanal brew · 2 hrs", "Food", 400, False, None),
+            ]),
+            ("Mughal Splendour & Sunder Nursery", [
+                ("09:30", "Humayun's Tomb Garden", "Precursor to Taj Mahal in red sandstone · 2 hrs", "Culture", 500, True, "PLN-DEL-201"),
+                ("12:00", "Sunder Nursery Heritage Walk & Fabcafe", "Mughal monuments, lakeside stroll & thali · 2.5 hrs", "Food", 1200, False, None),
+                ("16:00", "National Gallery of Modern Art", "Contemporary Indian art exhibitions · 1.5 hrs", "Culture", 150, False, None),
+                ("18:30", "India Gate & Kartavya Path Sunset", "Illuminated boulevard stroll & ice cream · 1.5 hrs", "Walk", 0, False, None),
+            ]),
+            ("Hauz Khas Village & Lodhi Art District", [
+                ("10:00", "Lodhi Art District Open Murals", "India's first public open-air art district · 2 hrs", "Walk", 0, False, None),
+                ("13:00", "Dilli Haat Food Courts & Crafts", "Regional state pavilions & handcrafted shawls · 2.5 hrs", "Food", 600, False, None),
+                ("17:00", "Hauz Khas Social & Deer Park Lake", "Sunset lake terrace cocktails & medieval ruins · 3 hrs", "Activity", 1500, True, "PLN-DEL-301"),
+            ]),
+        ],
+        "Goa": [
+            ("Vagator Pool Villa & Sunset Sundowner", [
+                ("12:00", "Vagator Boutique Pool Villa Check-in", "Welcome coconut water & private pool plunge · 2 hrs", "Stay", 3500, True, "PLN-GOA-101"),
+                ("15:00", "Burger Factory Anjuna", "Famous gourmet avocado beef burger & craft beer · 1.5 hrs", "Food", 800, False, None),
+                ("17:30", "Thalassa / Titlie Sunset Cliff", "Clifftop Greek sunset lounge & cocktails · 3 hrs", "Food", 2200, True, "PLN-GOA-102"),
+                ("22:00", "HillTop / Curlies Night Session", "Psytrance beachfront vibes · 3 hrs", "Activity", 1500, False, None),
+            ]),
+            ("Coastal Scooter Run & Watersports", [
+                ("09:00", "Scooter Rental & Ashvem Coastal Ride", "Open-air scenic coastal highway run · 2 hrs", "Activity", 400, True, "PLN-GOA-201"),
+                ("11:30", "Calangute Jet Ski & Parasailing", "Tandem parasail over Arabian Sea · 2 hrs", "Activity", 2200, True, "PLN-GOA-202"),
+                ("14:30", "Gunpowder Assagao Southern Feast", "Kerala beef fry, appams & kokum cooler · 1.5 hrs", "Food", 1200, False, None),
+                ("17:30", "Anjuna Flea Market & Beach Sunset", "Handmade silver jewellery & sundowner · 2.5 hrs", "Walk", 0, False, None),
+            ]),
+            ("South Goa Secret Coves & Dolphin Boat", [
+                ("08:30", "South Goa Scenic Drive to Palolem", "Coconut plantation road · 1.5 hrs", "Activity", 1200, True, "PLN-GOA-301"),
+                ("10:30", "Private Boat to Butterfly Beach", "Dolphin spotting & secret cove swimming · 2 hrs", "Activity", 1800, True, "PLN-GOA-302"),
+                ("13:30", "Cola Beach Freshwater Lagoon", "Kayaking where fresh river meets the sea · 2 hrs", "Activity", 800, False, None),
+                ("17:00", "Cabo De Rama Fort Clifftop Sunset", "Portuguese fortress over infinite ocean · 2 hrs", "Walk", 0, False, None),
+            ]),
+            ("Mandovi River Catamaran & Casino", [
+                ("10:30", "Fontainhas Latin Quarter Walk", "Heritage colourful Portuguese villas & bakeries · 2 hrs", "Walk", 300, False, None),
+                ("13:00", "Viva Panjim Traditional Seafood", "Goan fish curry thali & prawn balchão · 1.5 hrs", "Food", 900, False, None),
+                ("17:00", "Sunset Catamaran Cruise on Mandovi", "Live music & drinks on the river · 2 hrs", "Activity", 1500, True, "PLN-GOA-401"),
+                ("20:30", "Majestic Pride Casino Experience", "Unlimited dinner buffet, drinks & live shows · 3 hrs", "Activity", 3000, True, "PLN-GOA-402"),
+            ]),
+            ("Dudhsagar Waterfalls & Spice Plantation", [
+                ("07:30", "4x4 Jungle Jeep Safari to Dudhsagar", "Gushing multi-tiered waterfall swimming · 4 hrs", "Activity", 2400, True, "PLN-GOA-501"),
+                ("13:30", "Sahakari Organic Spice Plantation Lunch", "Traditional buffet on banana leaf & spice tour · 2 hrs", "Food", 700, True, "PLN-GOA-502"),
+                ("17:30", "Miramar Beach Farewell Sunset", "Relaxed beach walk & cashew feni tasting · 2 hrs", "Walk", 0, False, None),
+            ]),
+        ],
+        "Rishikesh": [
+            ("Tapovan Glamping & Triveni Ghat Aarti", [
+                ("11:00", "Swiss Dome Riverside Glamping Check-in", "Luxury dome tent on the Ganga bank · 1.5 hrs", "Stay", 2500, True, "PLN-RSH-101"),
+                ("13:30", "The Beatles (Chaurasi Kutiya) Ashram", "Graffiti domes & meditation hall in Rajaji forest · 2 hrs", "Culture", 600, True, "PLN-RSH-102"),
+                ("17:30", "Triveni Ghat Maha Aarti", "Flutes, conch shells & floating Ganga diyas · 2 hrs", "Culture", 0, False, None),
+                ("20:00", "Chotiwala Traditional Thali", "Legendary North Indian feast · 1 hr", "Food", 450, False, None),
+            ]),
+            ("16km Grade-3 Ganga Rafting & Cliff Jump", [
+                ("08:30", "Marine Drive to NIM Beach Rafting", "16km thrilling rapids: Three Blind Mice, Roller Coaster · 3 hrs", "Activity", 1500, True, "PLN-RSH-201"),
+                ("12:00", "Maggi & Tea at Rafting Cliff Jump Spot", "30-foot plunge into holy Ganga waters · 1 hr", "Food", 150, False, None),
+                ("14:30", "Campfire & Riverside Volleyball", "Evening snacks, barbecue & acoustic music · 3 hrs", "Activity", 0, False, None),
+            ]),
+            ("Waterfall Hike & Riverside Cafe Trail", [
+                ("08:00", "Neer Garh Waterfall Hike", "Trek through cascading limestone pools · 2.5 hrs", "Activity", 200, False, None),
+                ("11:30", "Little Buddha Riverside Cafe", "Wood-fired pizza, falafel platter & river view · 2 hrs", "Food", 750, False, None),
+                ("15:00", "Laxman Jhula Suspension Bridge & Ghats", "Local spice, rudraksha & singing bowls walk · 2 hrs", "Walk", 0, False, None),
+            ]),
+        ],
+        "Kashmir": [
+            ("Dal Lake Cedar Houseboat & Sunset Shikara", [
+                ("11:30", "Nigeen Lake Handcrafted Houseboat Check-in", "Carved walnut wood suite with shikara access · 2 hrs", "Stay", 4500, True, "PLN-KSH-101"),
+                ("14:00", "Ahdoos Wazwan Feast", "Rista, Rogan Josh & Gushtaba with saffron rice · 1.5 hrs", "Food", 1200, False, None),
+                ("17:00", "Golden Hour Shikara Ride to Char Chinar", "Floating gardens & sunset over Zabarwan mountains · 2 hrs", "Activity", 1000, True, "PLN-KSH-102"),
+            ]),
+            ("Gulmarg Gondola & Snow Peaks", [
+                ("08:00", "Private Cab Drive to Gulmarg", "Scenic alpine pine route · 1.5 hrs", "Activity", 1800, True, "PLN-KSH-201"),
+                ("10:00", "Gulmarg Gondola Phase 1 & Phase 2", "Cable car to 14,000 ft Apharwat peak snow line · 3.5 hrs", "Activity", 2200, True, "PLN-KSH-202"),
+                ("14:30", "Highland Park Kehwa & Hot Chocolate", "Classic 1960s ski lodge lounge · 1.5 hrs", "Food", 600, False, None),
+            ]),
+            ("Pahalgam Betaab Valley & Pine Trails", [
+                ("08:30", "Drive to Valley of Shepherds (Pahalgam)", "Along Lidder river and apple orchards · 2.5 hrs", "Activity", 2000, True, "PLN-KSH-301"),
+                ("11:30", "Betaab Valley & Aru Valley Pony Trail", "Lush meadows where Bollywood blockbusters were shot · 3 hrs", "Activity", 1500, False, None),
+                ("16:00", "Lidder River Trout Fish Tasting", "Freshly grilled river trout · 1.5 hrs", "Food", 900, False, None),
+            ]),
+            ("Mughal Gardens & Saffron Market", [
+                ("09:30", "Nishat & Shalimar Bagh Terraced Fountains", "Royal 17th century Mughal water gardens · 2.5 hrs", "Culture", 300, True, "PLN-KSH-401"),
+                ("13:00", "Lal Chowk Saffron & Dry Fruit Shopping", "Direct saffron, walnuts & pure pashmina shawls · 2.5 hrs", "Walk", 1500, False, None),
+            ]),
+        ],
+        "Dubai": [
+            ("Burj Khalifa & Downtown Fountains", [
+                ("10:00", "At The Top Burj Khalifa (124th & 125th Floor)", "World's tallest observatory deck vista · 2 hrs", "Activity", 4200, True, "PLN-DXB-101"),
+                ("13:00", "Time Out Market Downtown Dubai", "Artisanal food hall overlooking Burj Lake · 1.5 hrs", "Food", 1600, False, None),
+                ("16:00", "Dubai Mall & Underwater Aquarium", "Massive shark tunnel & luxury boulevard · 2 hrs", "Culture", 1800, True, "PLN-DXB-102"),
+                ("19:30", "Dubai Fountain Spectacle & Dinner", "Choreographed water show at the lake · 2 hrs", "Food", 2500, False, None),
+            ]),
+            ("VIP Red Dunes 4x4 Desert Safari", [
+                ("14:30", "Luxury Land Cruiser Desert Pickup", "Transfer to Lahbab high red dunes · 1 hr", "Activity", 0, True, "PLN-DXB-201"),
+                ("16:00", "Dune Bashing, Sandboarding & Quad Biking", "Adrenaline 4x4 dune ride & sunset photo stop · 2.5 hrs", "Activity", 3500, True, "PLN-DXB-202"),
+                ("19:00", "Bedouin Royal Camp BBQ & Fire Show", "Tanoura dance, belly show & Arabian buffet · 3 hrs", "Food", 1200, True, "PLN-DXB-203"),
+            ]),
+            ("Dubai Marina Luxury Yacht & Palm Jumeirah", [
+                ("10:00", "Private 50-Foot Yacht Cruise", "Cruising past Ain Dubai, Marina & Atlantis · 2 hrs", "Activity", 3200, True, "PLN-DXB-301"),
+                ("13:00", "The Pointe Palm Jumeirah Seafood Lunch", "Scenic oceanfront seafood dining · 2 hrs", "Food", 2400, False, None),
+                ("16:30", "Aura Skypool 360-Degree Infinity Pool", "World's highest 360 panoramic infinity pool · 3 hrs", "Activity", 4500, True, "PLN-DXB-302"),
+            ]),
+        ],
+        "Jaipur": [
+            ("Amber Fort & Royal Sheesh Mahal", [
+                ("09:00", "Amber Fort Hilltop Palace Tour", "Mirror palace (Sheesh Mahal) & Rajput architecture · 2.5 hrs", "Culture", 500, True, "PLN-JAI-101"),
+                ("12:30", "1135 AD Royal Fine Dining", "Dine inside fort ramparts with royal recipes · 2 hrs", "Food", 2200, False, None),
+                ("15:30", "Jal Mahal (Water Palace) Photo Stop", "Floating palace in Man Sagar lake · 45 mins", "Walk", 0, False, None),
+                ("18:30", "Chokhi Dhani Ethnic Rajasthani Village", "Puppet show, camel ride & royal thali buffet · 3 hrs", "Culture", 1200, True, "PLN-JAI-102"),
+            ]),
+            ("Nahargarh Fort Sunset & Pink City Bazaars", [
+                ("10:00", "Hawa Mahal (Palace of Winds) & City Palace", "953 jharokhas & royal museum artifacts · 2.5 hrs", "Culture", 700, True, "PLN-JAI-201"),
+                ("13:00", "Rawat Mishthan Bhandar Pyaaz Kachori", "Legendary onion kachori & lassi · 1 hr", "Food", 250, False, None),
+                ("15:00", "Johari Bazaar Gem & Blue Pottery Walk", "Traditional lac bangles & Jaipur quilts · 2 hrs", "Walk", 0, False, None),
+                ("17:30", "Nahargarh Fort Padao Sunset Lookout", "Panoramic golden hour view over the entire Pink City · 2 hrs", "Activity", 300, False, None),
+            ]),
+        ],
+        "Japan": [
+            ("Tokyo Shibuya & Digital Art Wonders", [
+                ("09:30", "TeamLab Planets Immersive Digital Art", "Walk through water and infinite crystal universes · 2.5 hrs", "Culture", 2800, True, "PLN-TYO-101"),
+                ("13:00", "Tsukiji Outer Market Fresh Sushi", "Fresh otoro tuna, wagyu skewers & tamagoyaki · 1.5 hrs", "Food", 2200, False, None),
+                ("16:00", "Shibuya Crossing & Shibuya Sky 360", "Iconic scramble crossing & glass rooftop deck · 2 hrs", "Activity", 2000, True, "PLN-TYO-102"),
+                ("19:00", "Omoide Yokocho Yakitori Alleys", "Atmospheric lantern-lit charcoal skewers in Shinjuku · 2 hrs", "Food", 1800, False, None),
+            ]),
+            ("Shinkansen Bullet Train to Kyoto Heritage", [
+                ("08:30", "Tokaido Shinkansen to Kyoto (300 km/h)", "Scenic bullet train journey past Mount Fuji · 2.5 hrs", "Activity", 8500, True, "PLN-KYO-201"),
+                ("12:00", "Gion Historic Ryokan Onsen Check-in", "Traditional tatami suite & cedar thermal bath · 2 hrs", "Stay", 6500, True, "PLN-KYO-202"),
+                ("15:00", "Fushimi Inari 10,000 Vermilion Gates", "Sacred mountain path of red torii gates · 2.5 hrs", "Culture", 0, False, None),
+                ("18:30", "Gion Geisha District Evening Walk & Kaiseki", "Multi-course seasonal Kyoto dining · 2 hrs", "Food", 4500, False, None),
+            ]),
+        ],
         "Bali": [
             ("Ubud Culture & Rice Terraces", [
-                ("07:30", "Tegallalang Rice Terrace", "Sunrise walk · 2 hrs · from the reel", "Activity", 1200, True, "PLN-UB-771"),
-                ("10:30", "Zest Café", "Plant-based brunch · 1.5 hrs · from the reel", "Food", 1800, False, None),
-                ("13:00", "Tirta Empul", "Balinese purification ritual · 2 hrs · from the reel", "Culture", 800, True, "PLN-UB-882"),
-                ("18:00", "Campuhan Ridge", "Sunset trail & cocktails at The Sayan House · 2.5 hrs · from the reel", "Walk", 2400, False, None),
+                ("07:30", "Tegallalang Rice Terrace", "Sunrise walk · 2 hrs", "Activity", 1200, True, "PLN-UB-771"),
+                ("10:30", "Zest Café Ubud", "Plant-based artisanal brunch · 1.5 hrs", "Food", 1800, False, None),
+                ("13:00", "Tirta Empul Water Purification", "Balinese sacred spring ritual · 2 hrs", "Culture", 800, True, "PLN-UB-882"),
+                ("18:00", "Campuhan Ridge & Sunset Cocktails", "Ridge trail & sunset at Sayan House · 2.5 hrs", "Walk", 2400, False, None),
             ]),
-            ("Kintamani Volcano & Hot Springs", [
-                ("03:30", "Mount Batur Sunrise Trek", "Guided 4WD jeep or hike · 4 hrs", "Activity", 3500, True, "PLN-MB-901"),
-                ("09:30", "Toya Devasya Hot Springs", "Lakeside infinity thermal baths · 2 hrs", "Activity", 1500, True, "PLN-TD-902"),
-                ("13:00", "Akasa Kintamani Coffee", "Panoramic volcano view cafe · 1.5 hrs", "Food", 900, False, None),
-                ("17:30", "Cretya Sunset Pool Club", "Terrace infinity pool day club · 3 hrs", "Activity", 2200, False, None),
+            ("Mount Batur Volcano Sunrise Trek", [
+                ("03:30", "Mount Batur 4WD Jeep Sunrise", "Guided volcanic sunrise above clouds · 3.5 hrs", "Activity", 3500, True, "PLN-MB-901"),
+                ("09:30", "Toya Devasya Thermal Hot Springs", "Lakeside mineral infinity pools · 2 hrs", "Activity", 1500, True, "PLN-TD-902"),
+                ("13:00", "Akasa Kintamani Crater Cafe", "Panoramic volcano view coffee · 1.5 hrs", "Food", 900, False, None),
+                ("17:30", "Cretya Sunset Pool Club", "Tiered jungle infinity pool · 3 hrs", "Activity", 2200, False, None),
             ]),
             ("Nusa Penida Coastal Safari", [
-                ("07:00", "Sanur Fast Boat to Nusa Penida", "Speedboat transfer · 45 mins", "Activity", 1800, True, "PLN-NP-101"),
-                ("09:00", "Kelingking Beach T-Rex Cliff", "Scenic viewpoint & hike · 2 hrs", "Walk", 500, True, "PLN-NP-102"),
-                ("12:30", "Broken Beach & Angel's Billabong", "Natural lagoon & arch · 1.5 hrs", "Walk", 500, False, None),
-                ("15:00", "Crystal Bay Snorkel", "Manta ray swimming spot · 2 hrs", "Activity", 2000, False, None),
+                ("07:00", "Sanur Fast Boat to Nusa Penida", "Speedboat transfer across ocean · 45 mins", "Activity", 1800, True, "PLN-NP-101"),
+                ("09:00", "Kelingking Beach T-Rex Cliff", "Dramatic ocean viewpoint & trail · 2 hrs", "Walk", 500, True, "PLN-NP-102"),
+                ("12:30", "Broken Beach & Angel's Billabong", "Natural limestone sea arch & tidal pool · 1.5 hrs", "Walk", 500, False, None),
+                ("15:00", "Crystal Bay Manta Snorkel", "Swimming with giant manta rays · 2 hrs", "Activity", 2000, False, None),
             ]),
             ("Canggu Beach & Surf Culture", [
-                ("08:30", "Crate Cafe Canggu", "Acai bowls & specialty brew · 1.5 hrs", "Food", 1100, False, None),
-                ("11:00", "Echo Beach Surf Session", "Beginner surf lesson with instructor · 2 hrs", "Activity", 2500, True, "PLN-CG-201"),
-                ("16:30", "La Brisa Sunset Beach Club", "Boho beachfront lounge & seafood · 3.5 hrs", "Food", 3200, False, None),
-            ]),
-            ("Uluwatu Clifftops & Fire Dance", [
-                ("10:00", "Padang Padang Beach", "Hidden cove & swimming · 2 hrs", "Walk", 400, False, None),
-                ("13:00", "Single Fin Uluwatu", "Cliffside lunch overlooking surf breaks · 2 hrs", "Food", 2200, False, None),
-                ("17:00", "Uluwatu Temple & Kecak Fire Dance", "Clifftop amphitheater sunset show · 2 hrs", "Culture", 1600, True, "PLN-UW-301"),
-            ]),
-            ("Seminyak Style & Sunsets", [
-                ("11:00", "Seminyak Boutique Village", "Local designer stores & art · 2 hrs", "Walk", 0, False, None),
-                ("14:00", "Motel Mexicola", "Vibrant Mexican tacos & margaritas · 2 hrs", "Food", 2400, False, None),
-                ("17:30", "Potato Head Beach Club", "Sunset sessions & oceanfront cabana · 4 hrs", "Activity", 3500, False, None),
-            ]),
-            ("Ubud Art & Farewell Feast", [
-                ("10:00", "Ubud Traditional Art Market", "Handcrafted souvenirs & silk · 2 hrs", "Culture", 1000, False, None),
-                ("13:00", "Locavore NXT Farewell Feast", "Contemporary Balinese tasting menu · 2.5 hrs", "Food", 4500, False, None),
-                ("17:00", "Ngurah Rai Airport Private Van", "Airport transfer · 1.5 hrs", "Activity", 1200, True, "PLN-TR-401"),
+                ("08:30", "Crate Cafe Canggu", "Organic acai bowls & specialty brew · 1.5 hrs", "Food", 1100, False, None),
+                ("11:00", "Echo Beach Surf Session", "Guided wave surfing with local pro · 2 hrs", "Activity", 2500, True, "PLN-CG-201"),
+                ("16:30", "La Brisa Sunset Beachfront Lounge", "Boho beachfront cabana & seafood BBQ · 3.5 hrs", "Food", 3200, False, None),
             ]),
         ],
         "Vietnam": [
             ("Hanoi Heritage & Old Quarter", [
                 ("08:30", "Egg Coffee at Cafe Giang", "Original egg coffee tasting · 1 hr", "Food", 300, True, "PLN-HN-101"),
-                ("10:30", "Train Street Crossing", "Close-up railway experience · 1.5 hrs", "Walk", 400, False, None),
-                ("13:00", "Bun Cha Huong Lien", "Obama bun cha noodles lunch · 1.5 hrs", "Food", 600, False, None),
+                ("10:30", "Train Street Railway Crossing", "Famous railway cafe experience · 1.5 hrs", "Walk", 400, False, None),
+                ("13:00", "Bun Cha Huong Lien", "Legendary grilled pork noodles lunch · 1.5 hrs", "Food", 600, False, None),
                 ("16:00", "Hoan Kiem Lake & Ngoc Son Temple", "Historical island temple walk · 2 hrs", "Culture", 500, True, "PLN-HN-102"),
             ]),
             ("Ha Long Bay Emerald Cruise", [
                 ("08:00", "Limousine Van to Ha Long Marina", "Express highway transfer · 2.5 hrs", "Activity", 1500, True, "PLN-HL-201"),
                 ("12:00", "Luxury Cruise Check-in & Buffet", "Overnight cruise embarkation · 2 hrs", "Food", 4500, True, "PLN-HL-202"),
                 ("14:30", "Sung Sot Surprise Cave Kayaking", "Limestone grotto exploration · 2.5 hrs", "Activity", 2000, False, None),
-                ("18:30", "Sunset Squid Fishing & Cocktails", "Onboard deck leisure · 3 hrs", "Activity", 1200, False, None),
-            ]),
-            ("Ha Long Bay Sunrise & Return", [
-                ("06:30", "Tai Chi on Sundeck", "Morning mist session · 1 hr", "Activity", 0, False, None),
-                ("08:00", "Ti Top Island Panoramic Lookout", "400 steps cliff climb · 1.5 hrs", "Walk", 500, False, None),
-                ("11:30", "Ha Long Marina Disembarkation", "Return transfer to Hanoi · 3 hrs", "Activity", 1500, True, "PLN-HL-203"),
-            ]),
-            ("Ninh Binh Karst Landscapes", [
-                ("08:00", "Trang An Boat Eco-Tour", "Rowing boat through 9 karst caves · 3 hrs", "Activity", 2200, True, "PLN-NB-301"),
-                ("12:30", "Mountain Goat Specialty Lunch", "Local northern Vietnamese fare · 1.5 hrs", "Food", 1200, False, None),
-                ("15:00", "Hang Mua Dragon Peak Hike", "500 stone stairs mountain view · 2 hrs", "Walk", 800, False, None),
-            ]),
-            ("Da Nang & Hoi An Lanterns", [
-                ("09:00", "Domestic Flight to Da Nang", "Vietnam Airlines 1h flight · 1 hr", "Activity", 3500, True, "PLN-DA-401"),
-                ("14:00", "Ba Na Hills Golden Bridge", "Giant stone hands skywalk · 3 hrs", "Activity", 2800, True, "PLN-DA-402"),
-                ("18:30", "Hoi An Lantern River Boat", "Release floating lanterns at night · 2 hrs", "Culture", 900, False, None),
-            ]),
-            ("Hoi An Tailors & Beach", [
-                ("09:00", "Custom Tailor Suit Fitting", "Ancient Town atelier · 2 hrs", "Culture", 3000, False, None),
-                ("12:00", "Banh Mi Phuong Lunch", "Legendary pork baguette · 1 hr", "Food", 350, False, None),
-                ("15:00", "An Bang Beach Lounging", "Coconut grove beach club · 3 hrs", "Walk", 800, False, None),
-            ]),
-            ("Departure Hanoi", [
-                ("10:00", "Dong Xuan Market Souvenirs", "Silk scarves & coffee beans · 2 hrs", "Culture", 1000, False, None),
-                ("14:00", "Noi Bai Airport Private Cab", "Airport transfer · 1 hr", "Activity", 1100, True, "PLN-TR-501"),
+                ("18:30", "Sunset Squid Fishing & Cocktails", "Onboard deck sunset lounge · 3 hrs", "Activity", 1200, False, None),
             ]),
         ],
         "Thailand": [
-            ("Phuket Old Town Heritage", [
+            ("Phuket Old Town Heritage & Sunsets", [
                 ("09:00", "Thalang Road Sino-Portuguese Walk", "Colonial shophouses & murals · 2 hrs", "Walk", 0, False, None),
                 ("11:30", "Raya Restaurant Michelin Crab Curry", "Authentic southern Thai feast · 1.5 hrs", "Food", 1600, False, None),
                 ("15:00", "Big Buddha Mountain Shrine", "360-degree island vista · 2 hrs", "Culture", 600, True, "PLN-PK-101"),
-                ("18:30", "Promthep Cape Sunset", "Golden hour cliff lookout · 1.5 hrs", "Walk", 0, False, None),
+                ("18:30", "Promthep Cape Golden Hour Lookout", "Golden cliff lookout over Andaman sea · 1.5 hrs", "Walk", 0, False, None),
             ]),
-            ("Phi Phi Islands Speedboat", [
-                ("07:30", "Speedboat to Maya Bay", "The Beach lagoon & snorkel · 3 hrs", "Activity", 3200, True, "PLN-PP-201"),
+            ("Phi Phi Islands & Maya Bay Speedboat", [
+                ("07:30", "Speedboat to Maya Bay Lagoon", "The Beach iconic cove & snorkeling · 3 hrs", "Activity", 3200, True, "PLN-PP-201"),
                 ("12:00", "Phi Phi Don Island Seafood Buffet", "Beachfront dining · 1.5 hrs", "Food", 1200, True, "PLN-PP-202"),
-                ("14:30", "Pileh Lagoon Cliff Jumping", "Emerald natural pool · 2 hrs", "Activity", 1500, False, None),
+                ("14:30", "Pileh Lagoon Cliff Jumping", "Emerald natural lagoon swim · 2 hrs", "Activity", 1500, False, None),
             ]),
-            ("James Bond & Phang Nga Bay", [
-                ("08:00", "Longtail Boat into Sea Caves", "Karst limestone exploration · 3 hrs", "Activity", 2800, True, "PLN-JB-301"),
-                ("13:00", "Koh Panyee Floating Muslim Village", "Stilted village lunch & tour · 2 hrs", "Culture", 1100, False, None),
-            ]),
-            ("Patong Beach & Nightlife", [
-                ("10:00", "Patong Watersports & Parasail", "High-speed water fun · 2 hrs", "Activity", 2000, False, None),
-                ("14:00", "Megakhram Royal Thai Spa", "2-hour authentic Thai massage · 2 hrs", "Activity", 1800, True, "PLN-TH-401"),
-                ("19:00", "Bangla Road Night Market", "Street skewers & live music · 3 hrs", "Food", 1400, False, None),
-            ]),
-            ("Departure Phuket", [
-                ("10:00", "Central Festival Souvenir Run", "Dried mangoes & spa oils · 2 hrs", "Walk", 800, False, None),
-                ("14:00", "Phuket Airport Transfer", "Private air-con van · 1 hr", "Activity", 1000, True, "PLN-TR-601"),
-            ]),
-        ],
+        ]
     }
 
-    selected_catalog = catalog.get(destination, catalog["Bali"])
-    result_days = []
+    # If destination is in curated catalog, use it!
+    if destination in catalog:
+        selected_catalog = catalog[destination]
+    else:
+        # Procedural fallback for any arbitrary destination (Paris, Manali, Ladakh, Kerala, Rome, etc.)
+        selected_catalog = [
+            (f"{destination} Iconic Highlights & Heritage", [
+                ("09:30", f"{destination} Landmark Exploration", f"Signature landmark & guided historical walk · 2 hrs", "Culture", 1200, True, f"PLN-{destination[:3].upper()}-101"),
+                ("12:30", f"Signature Local Tasting & Artisanal Cafe", f"Curated regional delicacies & specialty brew · 1.5 hrs", "Food", 1400, False, None),
+                ("15:00", f"{destination} Scenic Viewpoint Trail", f"Panoramic viewpoints & local boutique alleys · 2 hrs", "Walk", 400, False, None),
+                ("18:30", f"Golden Hour Sunset Dining", f"Atmospheric sunset lounge with live music · 2.5 hrs", "Food", 2200, False, None),
+            ]),
+            (f"{destination} Adventure & Hidden Trails", [
+                ("09:00", f"{destination} Guided Outdoor Safari / Excursion", f"Immersive adventure excursion into nature · 3 hrs", "Activity", 2800, True, f"PLN-{destination[:3].upper()}-201"),
+                ("13:00", f"Riverside / Coastal Farm-to-Table Lunch", f"Fresh seasonal tasting menu · 1.5 hrs", "Food", 1100, False, None),
+                ("16:00", f"Local Arts, Crafts & Market Walk", f"Authentic souvenirs & handicraft ateliers · 2 hrs", "Walk", 0, False, None),
+            ]),
+        ]
 
+    result_days = []
     for i in range(total_days):
         cat_index = i % len(selected_catalog)
         day_title, stops = selected_catalog[cat_index]
         day_num = i + 1
 
-        # If user specifically asked for volcano and it's day 2
-        if has_volcano and i == 1 and destination == "Bali":
-            day_title = "Mount Batur Volcano Sunrise & Springs"
-
         result_days.append({
             "day_number": day_num,
             "day_title": f"Day {day_num} · {day_title}",
-            "summary": f"Curated itinerary featuring top highlights and hidden spots in {destination}.",
+            "summary": f"Curated itinerary featuring top highlights, authentic eateries, and hidden spots in {destination}.",
             "stops": stops,
         })
 
@@ -486,14 +753,22 @@ def _generate_curated_days_and_stops(destination: str, total_days: int, prompt: 
 @router.post("/generate", response_model=PlannrTripDetailResponse)
 def generate_trip(
     req: PlannrGenerateRequest,
+    x_anthropic_api_key: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
     """
-    Accepts NLP prompt, style, interests.
-    Parses with intelligent heuristics into structured entities (destination, dates, travellers, budget, days, stops)
-    and saves as a new PlannrTrip. Returns the created trip.
+    Accepts NLP prompt, style, interests, hints.
+    Integrates Claude 3.5 deep reasoning travel brain if key is available.
+    Parses entities with intelligent heuristics, creates full PlannrTrip with days and stops,
+    and returns serialized trip detail.
     """
-    entities = _parse_trip_entities(req.prompt, req.style)
+    entities = _parse_trip_entities(
+        prompt=req.prompt,
+        style=req.style,
+        destination_hint=req.destination,
+        budget_hint=req.budget_per_person,
+        travellers_hint=req.travellers,
+    )
     trip_id = f"trip_{entities['destination'].lower()}_{uuid.uuid4().hex[:6]}"
 
     trip = PlannrTrip(
@@ -537,14 +812,14 @@ def generate_trip(
 
     # Active Poll
     dest_name = entities["destination"]
-    poll_q = f"Day 3 — {dest_name} Island Snorkel or Mountain Trek?" if dest_name == "Bali" else f"Day 3 — Adventure Tour or Sunset Dining?"
+    poll_q = f"{dest_name} — High-energy adventure or relaxed sunset dining?"
     poll = PlannrPoll(
         id=f"{trip_id}_poll",
         trip_id=trip_id,
         question=poll_q,
         ends_in_hours=24,
         options=json.dumps([
-            {"id": "opt_1", "title": f"Highlight Excursion ({dest_name})", "votes": 2, "voted_by": ["AK", "RS"]},
+            {"id": "opt_1", "title": f"Adventure Tour in {dest_name}", "votes": 2, "voted_by": ["AK", "RS"]},
             {"id": "opt_2", "title": f"Leisure & Sunset Lounge", "votes": 1, "voted_by": ["VJ"]},
         ]),
     )
@@ -552,8 +827,8 @@ def generate_trip(
 
     # Matched Travelers
     matched_data = [
-        {"name": "Priya S.", "city": "Delhi", "match_pct": 92, "trips_count": 12, "interests": ["Cafes", "Photography", "Beaches"], "date_flexibility": "Flexible +/- 2 days"},
-        {"name": "Karan M.", "city": "Gurugram", "match_pct": 85, "trips_count": 8, "interests": ["Trekking", "Nightlife", "Scooters"], "date_flexibility": "Exact dates"},
+        {"name": "Priya S.", "city": "Delhi", "match_pct": 94, "trips_count": 12, "interests": ["Cafes", "Photography", "Beaches"], "date_flexibility": "Flexible +/- 2 days"},
+        {"name": "Karan M.", "city": "Gurugram", "match_pct": 88, "trips_count": 8, "interests": ["Trekking", "Nightlife", "Scooters"], "date_flexibility": "Exact dates"},
     ]
     for idx, mt in enumerate(matched_data, 1):
         traveler = PlannrMatchedTraveler(
@@ -569,36 +844,101 @@ def generate_trip(
         )
         db.add(traveler)
 
-    # Generate days and stops
-    days_data = _generate_curated_days_and_stops(entities["destination"], entities["total_days"], req.prompt)
-    for day_info in days_data:
-        day_id = f"{trip_id}_d{day_info['day_number']}"
-        day = PlannrTripDay(
-            id=day_id,
-            trip_id=trip_id,
-            day_number=day_info["day_number"],
-            day_title=day_info["day_title"],
-            summary=day_info["summary"],
-        )
-        db.add(day)
-        db.flush()
-
-        for s_idx, stop_tuple in enumerate(day_info["stops"], 1):
-            time_slot, place_name, subtitle, category, price, is_booked, b_ref = stop_tuple
-            stop = PlannrTripStop(
-                id=f"{day_id}_s{s_idx}",
-                trip_day_id=day_id,
-                time_slot=time_slot,
-                place_name=place_name,
-                subtitle=subtitle,
-                category=category,
-                price_per_person=price,
-                is_booked=is_booked,
-                is_reserve_only=(price > 0 and not is_booked and category == "Food"),
-                is_from_reel=False,
-                booking_ref=b_ref,
+    # ── CLAUDE DEEP REASONING AGENT HOOK ──
+    claude_used = False
+    resolved_api_key = get_anthropic_api_key(req.api_key, x_anthropic_api_key)
+    if resolved_api_key and run_claude_travel_agent:
+        try:
+            logger.info("Executing Anthropic Claude travel agent for Plannr generation...")
+            claude_res = run_claude_travel_agent(
+                query=req.prompt,
+                api_key=resolved_api_key,
+                duration_hours=float(entities.get("micro_hours", 3)) if entities.get("is_micro_trip") else None,
+                destination=entities["destination"],
+                vibe=req.style,
+                budget=str(entities["budget_per_person"]),
             )
-            db.add(stop)
+            if claude_res.get("success") and claude_res.get("timeline_steps"):
+                tc = claude_res.get("trip_card") or {}
+                if tc.get("title"):
+                    trip.title = tc["title"]
+
+                day_id = f"{trip_id}_d1"
+                day = PlannrTripDay(
+                    id=day_id,
+                    trip_id=trip_id,
+                    day_number=1,
+                    day_title=tc.get("title") or f"Day 1 · {entities['destination']} Tailored Itinerary",
+                    summary=claude_res.get("thinking") or "Curated via Anthropic Claude 3.5 deep spatial reasoning.",
+                )
+                db.add(day)
+                db.flush()
+
+                for s_idx, step in enumerate(claude_res["timeline_steps"], 1):
+                    raw_time = step.get("time_window") or step.get("time") or f"{s_idx * 2}:00"
+                    slot = raw_time.split("-")[0].strip() if "-" in raw_time else raw_time
+                    title = step.get("title") or "Curated Stop"
+                    act = step.get("activity") or step.get("mode") or ""
+                    raw_cost = step.get("cost", "₹0")
+                    cost_int = int(re.sub(r"[^0-9]", "", str(raw_cost)) or "0")
+                    cat = "Food" if any(w in (title + act).lower() for w in ["cafe", "food", "eat", "brew", "patty", "dinner", "lunch"]) else ("Walk" if "walk" in (title + act).lower() else "Activity")
+
+                    stop = PlannrTripStop(
+                        id=f"{day_id}_s{s_idx}",
+                        trip_day_id=day_id,
+                        time_slot=slot,
+                        place_name=title,
+                        subtitle=act[:120],
+                        category=cat,
+                        price_per_person=cost_int,
+                        is_booked=(s_idx == 1),
+                        is_reserve_only=(cat == "Food"),
+                        is_from_reel=False,
+                        booking_ref=f"PLN-CL-{s_idx:03d}",
+                    )
+                    db.add(stop)
+
+                claude_used = True
+        except Exception as e:
+            logger.error(f"Claude agent execution failed during plannr generate: {e}")
+
+    # Fallback to our deep curated engine if Claude is not active or did not output steps
+    if not claude_used:
+        days_data = _generate_curated_days_and_stops(
+            destination=entities["destination"],
+            total_days=entities["total_days"],
+            prompt=req.prompt,
+            is_micro_trip=entities.get("is_micro_trip", False),
+            micro_hours=entities.get("micro_hours", 3),
+        )
+        for day_info in days_data:
+            day_id = f"{trip_id}_d{day_info['day_number']}"
+            day = PlannrTripDay(
+                id=day_id,
+                trip_id=trip_id,
+                day_number=day_info["day_number"],
+                day_title=day_info["day_title"],
+                summary=day_info["summary"],
+            )
+            db.add(day)
+            db.flush()
+
+            for s_idx, stop_tuple in enumerate(day_info["stops"], 1):
+                time_slot, place_name, subtitle, category, price, is_booked, b_ref = stop_tuple
+                stop = PlannrTripStop(
+                    id=f"{day_id}_s{s_idx}",
+                    trip_day_id=day_id,
+                    time_slot=time_slot,
+                    place_name=place_name,
+                    subtitle=subtitle,
+                    category=category,
+                    price_per_person=price,
+                    is_booked=is_booked,
+                    is_reserve_only=(price > 0 and not is_booked and category == "Food"),
+                    is_from_reel=False,
+                    booking_ref=b_ref,
+                )
+                db.add(stop)
 
     db.commit()
     db.refresh(trip)

@@ -148,7 +148,9 @@ export const ItineraryTimelineScreen: React.FC<ItineraryTimelineScreenProps> = (
             {activeTrip.title}
           </h1>
           <p className="text-xs text-white/95 font-medium drop-shadow-sm mt-0.5">
-            {activeTrip.start_date} – {activeTrip.end_date} · {activeTrip.total_days} days · ₹{activeTrip.budget_per_person?.toLocaleString('en-IN')} / person
+            {activeTrip.start_date === activeTrip.end_date
+              ? `${activeTrip.start_date} · Express Micro-Trip · ₹${activeTrip.budget_per_person?.toLocaleString('en-IN')} / person`
+              : `${activeTrip.start_date} – ${activeTrip.end_date} · ${activeTrip.total_days} days · ₹${activeTrip.budget_per_person?.toLocaleString('en-IN')} / person`}
           </p>
         </div>
       </div>
@@ -169,7 +171,7 @@ export const ItineraryTimelineScreen: React.FC<ItineraryTimelineScreenProps> = (
                     : 'bg-white text-[#151E28] border border-[#EDE7DF] hover:bg-[#F5EFE6]'
                 }`}
               >
-                {day.day_number === 1 ? 'Day 1 · Ubud' : `Day ${day.day_number}`}
+                {day.day_title ? (day.day_title.length > 22 ? day.day_title.slice(0, 22) + '...' : day.day_title) : `Day ${day.day_number}`}
               </button>
             );
           })}
