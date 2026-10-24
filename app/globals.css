@@ -1,0 +1,357 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── MakeMyTrip Authentic Light Superapp Design Tokens ─── */
+:root {
+  --sky: #F2F5FA;
+  --ink: #0F172A;
+  --ink2: #334155;
+  --ink3: #64748B;
+  --mmt-blue: #0084FF;
+  --mmt-blue-dark: #0066CC;
+  --mmt-red: #EB2026;
+  --mmt-orange: #FF6D38;
+  --mint: #00A86B;
+  --line: #E2E8F0;
+  --card: #FFFFFF;
+  --board: #0F172A;
+  --flap: #1E293B;
+  --flap-t: #FFC940;
+}
+
+/* ─── Global Base ─── */
+html {
+  scroll-behavior: smooth;
+  background-color: #F2F5FA;
+  color-scheme: light;
+}
+
+body {
+  background-color: #F2F5FA;
+  color: #0F172A;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* ─── MakeMyTrip Iconic Vibrant Blue Hero Backdrop ─── */
+.mmt-hero-bg {
+  background: linear-gradient(180deg, #051334 0%, #0A225C 180px, #133984 320px, #E9F0FA 460px, #F2F5FA 100%);
+  position: relative;
+}
+
+/* ─── Identity transforms to prevent stacking-context shifts (modern-web-guidance) ─── */
+.fs-card,
+.boarding-pass,
+.glass-panel,
+.pchip,
+button,
+a {
+  translate: 0px 0px;
+  rotate: 0deg;
+  scale: 1;
+}
+
+/* Global smooth transitions */
+button,
+a,
+input,
+select,
+textarea,
+[role="button"],
+[tabindex] {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── Focus Ring Styles ─── */
+*:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #FFFFFF, 0 0 0 4px #0084FF;
+  border-radius: inherit;
+}
+
+/* ─── Button Press Animation ─── */
+.btn-press {
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease;
+}
+.btn-press:active {
+  transform: scale(0.97);
+}
+
+/* ─── MakeMyTrip Clean White Cards ─── */
+.fs-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 24px;
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.06), 0 2px 8px -2px rgba(0, 0, 0, 0.04);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, box-shadow;
+  color: #0F172A;
+}
+
+.fs-card:hover {
+  box-shadow: 0 20px 45px -10px rgba(0, 132, 255, 0.15), 0 4px 15px -2px rgba(0, 0, 0, 0.05);
+  border-color: #93C5FD;
+  transform: translateY(-3px);
+}
+
+/* ─── Floating Pill Badge Chips ─── */
+.pchip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 9999px;
+  padding: 8px 16px;
+  box-shadow: 0 12px 30px -5px rgba(15, 23, 42, 0.15);
+  white-space: nowrap;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+}
+.pchip:hover {
+  transform: scale(1.04) translateY(-2px);
+  box-shadow: 0 18px 40px -8px rgba(0, 132, 255, 0.25);
+}
+
+/* ─── Floating Animation for Badges ─── */
+@keyframes floatGentle1 {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-7px); }
+}
+@keyframes floatGentle2 {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(7px); }
+}
+.pchip-float-1 {
+  animation: floatGentle1 4.5s ease-in-out infinite;
+}
+.pchip-float-2 {
+  animation: floatGentle2 5.2s ease-in-out infinite;
+}
+
+/* ─── Story Rings ─── */
+.story-ring-active {
+  background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+  padding: 3px;
+  border-radius: 9999px;
+  box-shadow: 0 4px 15px rgba(220, 39, 67, 0.3);
+}
+
+.story-ring-jet {
+  background: linear-gradient(135deg, #0084FF 0%, #00C6FF 100%);
+  padding: 3px;
+  border-radius: 9999px;
+  box-shadow: 0 4px 15px rgba(0, 132, 255, 0.3);
+}
+
+.story-ring-fire {
+  background: linear-gradient(135deg, #FF6D38 0%, #EB2026 100%);
+  padding: 3px;
+  border-radius: 9999px;
+  box-shadow: 0 4px 15px rgba(235, 32, 38, 0.3);
+}
+
+/* ─── Clean Airline Boarding Pass ─── */
+.boarding-pass {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 24px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.boarding-pass:hover {
+  border-color: #93C5FD;
+  box-shadow: 0 20px 45px -8px rgba(0, 132, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.boarding-pass-perforated {
+  border-right: 2px dashed #CBD5E1;
+}
+
+/* Perforation Notches on ticket */
+.ticket-notch-top {
+  position: absolute;
+  top: -12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  background-color: #F2F5FA;
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.06);
+  z-index: 10;
+}
+
+.ticket-notch-bottom {
+  position: absolute;
+  bottom: -12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  background-color: #F2F5FA;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06);
+  z-index: 10;
+}
+
+/* ─── Animated Flight Laser Arc ─── */
+.flight-beam {
+  background: linear-gradient(90deg, transparent 0%, #0084FF 50%, #00E5FF 95%, #FFFFFF 100%);
+  height: 2px;
+  width: 100%;
+  position: relative;
+}
+
+/* ─── Atlys Document Scan Laser Line ─── */
+@keyframes laserScan {
+  0% { top: 0%; opacity: 0.8; }
+  50% { top: 96%; opacity: 1; }
+  100% { top: 0%; opacity: 0.8; }
+}
+
+.scan-laser-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #00A86B, #00E5FF, transparent);
+  box-shadow: 0 0 16px #00A86B;
+  animation: laserScan 2.4s ease-in-out infinite;
+  z-index: 20;
+}
+
+/* ─── Airport Split-Flap Chars ─── */
+.flap-char {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.15em;
+  height: 1.55em;
+  padding: 0 0.2em;
+  background: #1E293B;
+  border-radius: 4px;
+  font-family: var(--font-jetbrains), monospace;
+  font-weight: 800;
+  font-size: 15px;
+  color: #F8FAFC;
+  position: relative;
+  box-shadow: 0 3px 6px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+
+.flap-char::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+/* ─── Sticky Cart Bar ─── */
+.sticky-cart-bar {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid #E2E8F0;
+  box-shadow: 0 -10px 35px -5px rgba(15, 23, 42, 0.12);
+}
+
+/* ─── Modal Animations ─── */
+@keyframes modalEnter {
+  0% { opacity: 0; transform: scale(0.95) translateY(12px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes backdropFade {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.modal-backdrop-enter {
+  animation: backdropFade 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.modal-panel-enter {
+  animation: modalEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── Tab Switch Fade & Slide-in ─── */
+@keyframes tabEnter {
+  0% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.tab-content-enter {
+  animation: tabEnter 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── Cart Pulse Glow ─── */
+@keyframes cartPulseGreen {
+  0% { box-shadow: 0 0 0 0 rgba(0, 168, 107, 0.5); }
+  70% { box-shadow: 0 0 0 15px rgba(0, 168, 107, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 168, 107, 0); }
+}
+
+.cart-pulse {
+  animation: cartPulseGreen 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── Utility Scrollbar Hide ─── */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.thin-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 9999px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* ─── Toast Container ─── */
+.toast-container {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 18px;
+  padding: 12px 18px;
+  box-shadow: 0 15px 35px -5px rgba(15, 23, 42, 0.15);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 290px;
+  max-width: 420px;
+  animation: toastIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(40px) scale(0.95); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
