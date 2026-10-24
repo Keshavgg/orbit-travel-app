@@ -201,6 +201,27 @@ export default function Home() {
     else if (newTab === 'weekend') triggerFlyscanWipe('rishikesh');
   };
 
+  React.useEffect(() => {
+    const handleOrbitNav = (e: any) => {
+      const targetTab = e.detail?.tab;
+      if (targetTab) {
+        setAppMode('orbit');
+        handleTabChange(targetTab);
+        setTimeout(() => {
+          const el = document.getElementById(`${targetTab}-section`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          } else {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }
+        }, 150);
+      }
+    };
+
+    window.addEventListener('orbit:navigate', handleOrbitNav);
+    return () => window.removeEventListener('orbit:navigate', handleOrbitNav);
+  }, []);
+
   const handleFlightSearch = (from: string, to: string) => {
     const toLower = to.toLowerCase();
     let target = 'goa';
@@ -661,53 +682,63 @@ export default function Home() {
           )}
 
           {activeTab === 'events' && (
-            <ConcertsEventsFeed
-              onSelectToCart={handleSelectToCart}
-              onFocusCity={(k) => handleFocusCity(k, true)}
-            />
+            <div id="events-section">
+              <ConcertsEventsFeed
+                onSelectToCart={handleSelectToCart}
+                onFocusCity={(k) => handleFocusCity(k, true)}
+              />
+            </div>
           )}
 
           {activeTab === 'flights' && (
-            <MakeMyTripFlightBooking
-              onSearchFlights={handleFlightSearch}
-              onSelectToCart={handleSelectToCart}
-              onFocusCity={(k) => handleFocusCity(k, false)}
-              activeCityKey={activeCityKey}
-              renderGlobe={
-                <ThreeGlobe
-                  activeCityKey={activeCityKey}
-                  onSelectCity={(key) => handleFocusCity(key, false)}
-                  onBookItem={handleSelectToCart}
-                />
-              }
-            />
+            <div id="flights-section">
+              <MakeMyTripFlightBooking
+                onSearchFlights={handleFlightSearch}
+                onSelectToCart={handleSelectToCart}
+                onFocusCity={(k) => handleFocusCity(k, false)}
+                activeCityKey={activeCityKey}
+                renderGlobe={
+                  <ThreeGlobe
+                    activeCityKey={activeCityKey}
+                    onSelectCity={(key) => handleFocusCity(key, false)}
+                    onBookItem={handleSelectToCart}
+                  />
+                }
+              />
+            </div>
           )}
 
           {activeTab === 'stays' && (
-            <MakeMyTripHotelBooking
-              onSelectToCart={handleSelectToCart}
-              onFocusCity={(k) => handleFocusCity(k, true)}
-            />
+            <div id="stays-section">
+              <MakeMyTripHotelBooking
+                onSelectToCart={handleSelectToCart}
+                onFocusCity={(k) => handleFocusCity(k, true)}
+              />
+            </div>
           )}
 
           {activeTab === 'weekend' && (
-            <MakeMyTripVillaBooking
-              onSelectToCart={handleSelectToCart}
-              onFocusCity={(k) => handleFocusCity(k, true)}
-              activeCityKey={activeCityKey}
-            />
+            <div id="weekend-section">
+              <MakeMyTripVillaBooking
+                onSelectToCart={handleSelectToCart}
+                onFocusCity={(k) => handleFocusCity(k, true)}
+                activeCityKey={activeCityKey}
+              />
+            </div>
           )}
 
           {activeTab === 'visa' && (
-            <MakeMyTripVisaBooking
-              onSelectToCart={handleSelectToCart}
-              onFocusCity={(k) => handleFocusCity(k, true)}
-              activeCityKey={activeCityKey}
-            />
+            <div id="visa-section">
+              <MakeMyTripVisaBooking
+                onSelectToCart={handleSelectToCart}
+                onFocusCity={(k) => handleFocusCity(k, true)}
+                activeCityKey={activeCityKey}
+              />
+            </div>
           )}
 
           {activeTab === 'dirtcheap' && (
-            <div className="space-y-6">
+            <div id="dirtcheap-section" className="space-y-6">
               <DepartureBoard
                 onSelectToCart={handleSelectToCart}
                 onSelectTab={handleTabChange}
@@ -721,7 +752,9 @@ export default function Home() {
           )}
 
           {activeTab === 'gst' && (
-            <GstSection />
+            <div id="gst-section">
+              <GstSection />
+            </div>
           )}
 
           {activeTab === 'esim' && (

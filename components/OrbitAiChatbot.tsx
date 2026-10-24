@@ -107,6 +107,12 @@ export default function OrbitAiChatbot({
 
   useEffect(() => {
     setMounted(true);
+
+    const handleGlobalOpen = () => {
+      handleOpen();
+    };
+    window.addEventListener('orbit:open-chatbot', handleGlobalOpen);
+    return () => window.removeEventListener('orbit:open-chatbot', handleGlobalOpen);
   }, []);
 
   const activeOpen = isOpen || internalOpen;
@@ -385,43 +391,44 @@ export default function OrbitAiChatbot({
 
   return createPortal(
     <>
-      {/* ─── 1. CYBER BLUE FLOATING AI COPILOT LAUNCHER (OPENS FULL NEW TAB) ─── */}
-      <div 
-        className={`fixed right-4 sm:right-6 z-[9990] transition-all duration-300 flex flex-col items-end pointer-events-auto ${
-          isCartVisible ? 'bottom-24 sm:bottom-20' : 'bottom-6 sm:bottom-7'
-        }`}
-      >
-        {/* Main Glowing Floating AI Pill Link */}
-        <a
-          href="/chat"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center space-x-3 px-5 py-3.5 sm:px-6 sm:py-4 bg-gradient-to-r from-[#0084FF] via-[#0A225C] to-[#0A1024] hover:from-[#0070db] hover:to-[#132d75] active:scale-95 text-white font-black text-sm rounded-full shadow-[0_12px_45px_rgba(0,132,255,0.65)] hover:shadow-[0_16px_55px_rgba(0,132,255,0.8)] transition-all duration-300 group cursor-pointer border-2 border-cyan-400/80 ring-4 ring-cyan-500/25 btn-press"
-          aria-label="Open Orbit AI Travel Chatbot in New Tab"
+      {/* ─── 1. CYBER BLUE FLOATING AI COPILOT LAUNCHER ─── */}
+      {!activeOpen && (
+        <div 
+          className={`fixed right-4 sm:right-6 z-[9990] transition-all duration-300 flex flex-col items-end pointer-events-auto ${
+            isCartVisible ? 'bottom-32 sm:bottom-28' : 'bottom-20 sm:bottom-8'
+          }`}
         >
-          {/* Robot Avatar with Cyan Glow */}
-          <div className="relative flex items-center justify-center">
-            <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-[#0084FF] to-cyan-400 flex items-center justify-center text-white shadow-md shadow-cyan-400/50">
-              <Bot className="w-5 h-5 text-white animate-pulse" />
+          {/* Main Glowing Floating AI Pill Button */}
+          <button
+            type="button"
+            onClick={handleOpen}
+            className="flex items-center space-x-3 px-5 py-3.5 sm:px-6 sm:py-4 bg-gradient-to-r from-[#0084FF] via-[#0A225C] to-[#0A1024] hover:from-[#0070db] hover:to-[#132d75] active:scale-95 text-white font-black text-sm rounded-full shadow-[0_12px_45px_rgba(0,132,255,0.65)] hover:shadow-[0_16px_55px_rgba(0,132,255,0.8)] transition-all duration-300 group cursor-pointer border-2 border-cyan-400/80 ring-4 ring-cyan-500/25 btn-press"
+            aria-label="Open Orbit AI Travel Chatbot"
+          >
+            {/* Robot Avatar with Cyan Glow */}
+            <div className="relative flex items-center justify-center">
+              <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-[#0084FF] to-cyan-400 flex items-center justify-center text-white shadow-md shadow-cyan-400/50">
+                <Bot className="w-5 h-5 text-white animate-pulse" />
+              </div>
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-cyan-400 rounded-full animate-ping opacity-90"></span>
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-cyan-400 rounded-full border-2 border-[#0A1024]"></span>
             </div>
-            <span className="absolute -top-1 -right-1 w-3 h-3 bg-cyan-400 rounded-full animate-ping opacity-90"></span>
-            <span className="absolute -top-1 -right-1 w-3 h-3 bg-cyan-400 rounded-full border-2 border-[#0A1024]"></span>
-          </div>
-          
-          {/* Text Label */}
-          <div className="text-left leading-tight">
-            <div className="flex items-center gap-1.5 font-black text-xs sm:text-sm text-white tracking-tight">
-              <span>✨ AI Recommender</span>
-              <span className="px-1.5 py-0.2 bg-cyan-400 text-slate-950 text-[9px] rounded font-mono font-black">
-                NEW TAB ↗
-              </span>
+            
+            {/* Text Label */}
+            <div className="text-left leading-tight">
+              <div className="flex items-center gap-1.5 font-black text-xs sm:text-sm text-white tracking-tight">
+                <span>✨ AI Recommender</span>
+                <span className="px-1.5 py-0.2 bg-cyan-400 text-slate-950 text-[9px] rounded font-mono font-black">
+                  OPEN CHAT ↗
+                </span>
+              </div>
+              <div className="text-[10.5px] text-cyan-200 font-medium">
+                Tell AI &amp; Get Custom Trips
+              </div>
             </div>
-            <div className="text-[10.5px] text-cyan-200 font-medium">
-              Tell AI &amp; Get Custom Trips
-            </div>
-          </div>
-        </a>
-      </div>
+          </button>
+        </div>
+      )}
 
       {/* ─── 2. FULL INTERACTIVE AI CHATBOT TERMINAL DRAWER ─── */}
       {activeOpen && (
@@ -464,6 +471,13 @@ export default function OrbitAiChatbot({
               >
                 <RotateCcw className="w-4 h-4" />
               </button>
+              <a
+                href="/chat"
+                className="text-slate-400 hover:text-cyan-300 p-1.5 rounded-full hover:bg-white/10 transition active:scale-90"
+                title="Open Dedicated Full Page Chat"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
               <button 
                 onClick={() => setIsFullscreen(!isFullscreen)} 
                 className="text-slate-400 hover:text-cyan-300 p-1.5 rounded-full hover:bg-white/10 transition active:scale-90"
